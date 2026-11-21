@@ -14,7 +14,7 @@
 
 Пост можно скопировать из предпросмотра. Программа не создаёт трансляции и не публикует записи во ВКонтакте.
 
-**Portable EXE для коллег:** после push в `main` открой GitHub → Actions → последний успешный запуск `Windows app` → скачай артефакт `ChelbasketDesktop-win-x64`. Локальная сборка и требования описаны в [инструкции Windows-приложения](windows-app/README.md).
+**Portable EXE:** после push в `main` открой GitHub → Actions → последний успешный запуск `Windows app` → скачай артефакт `ChelbasketDesktop-win-x64`. Локальная сборка и требования описаны в [инструкции Windows-приложения](windows-app/README.md).
 
 Для рендеринга картинок нужен Microsoft Edge WebView2 Runtime. На большинстве компьютеров Windows 10/11 он уже есть. Если его нет, установи Evergreen Runtime с [официального сайта Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/).
 
