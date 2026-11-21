@@ -267,12 +267,13 @@
                                 <Border Background="#F4F8FB" CornerRadius="10" Padding="14" Margin="0,0,0,10">
                                     <StackPanel>
                                         <TextBlock Text="Подготовка эфиров в VK Видео" Foreground="#102A43" FontSize="16" FontWeight="Bold" />
-                                        <TextBlock Text="Войди в VK в окне ниже. Выбери игру в таблице, и приложение заполнит название по games.txt и оставит описание пустым. Проверь параметры и сам нажми «Создать трансляцию» на странице VK." Foreground="#77899B" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0" />
+                                        <TextBlock Text="VK Видео открывается в отдельном большом окне. Выбери игру в таблице, чтобы заполнить название по games.txt; описание останется пустым. Проверь настройки и сам нажми «Создать трансляцию» в VK." Foreground="#77899B" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0" />
                                     </StackPanel>
                                 </Border>
                                 <DockPanel Grid.Row="1" Margin="0,0,0,9">
-                                    <TextBlock Text="В браузере открой пробную группу и форму эфира" VerticalAlignment="Center" Foreground="#52677A" Margin="0,0,12,0" />
+                                    <TextBlock Text="Открой группу и форму создания эфира" VerticalAlignment="Center" Foreground="#52677A" Margin="0,0,12,0" />
                                     <Button x:Name="ConnectVkButton" Content="Открыть VK Видео" Click="OpenVkVideo_Click" Margin="0,0,8,0" />
+                                    <Button x:Name="ExpandVkBrowserButton" Content="Развернуть окно VK" Click="ExpandVkBrowser_Click" Margin="0,0,8,0" IsEnabled="False" />
                                     <Button x:Name="CreateStreamsButton" Content="Заполнить эфир для выбранной игры" Style="{StaticResource PrimaryButton}" Click="FillStreamForm_Click" IsEnabled="False" />
                                 </DockPanel>
                                 <Grid Grid.Row="2">
@@ -292,7 +293,7 @@
                                     <Button Content="Сохранить ссылку текущей игры" Click="SaveCurrentStreamLink_Click" Margin="0,0,8,0" />
                                     <TextBox x:Name="VkCurrentLinkBox" ToolTip="Если VK не открыл страницу эфира автоматически, вставь сюда ссылку после создания" VerticalContentAlignment="Center" />
                                 </DockPanel>
-                                <ContentControl x:Name="VkVideoBrowserHost" Grid.Row="4" Height="380" Visibility="Collapsed" />
+                                <ContentControl x:Name="VkVideoBrowserHost" Grid.Row="4" Height="180" Visibility="Collapsed" />
                             </Grid>
                         </TabItem>
                         <TabItem x:Name="BrowserTab" Header="Страница экспорта"><wv2:WebView2 x:Name="CoverBrowser" DefaultBackgroundColor="#FFFFFF" /></TabItem>
