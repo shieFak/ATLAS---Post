@@ -4,6 +4,7 @@
 **/bin/
 **/obj/
 windows-app/publish/
+windows-app/publish-*/
 .vs/
 *.user
 *.suo
