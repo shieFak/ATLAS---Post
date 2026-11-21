@@ -65,7 +65,8 @@ public static class PostBuilder
     }
 
     public static string BuildPost(string tournamentName, DateTime date, IReadOnlyList<GameRecord> games,
-        string intro, string venue, string hashtags, string firstStreamLink)
+        string intro, string venue, string hashtags, string firstStreamLink,
+        IReadOnlyDictionary<string, string>? streamLinksByGameId = null)
     {
         var lines = new List<string>
         {
@@ -78,9 +79,14 @@ public static class PostBuilder
         {
             var game = games[index];
             var teams = $"{game.HomeTeam} - {game.GuestTeam}";
-            var label = TryExpandStreamLink(firstStreamLink, index, out var url)
-                ? $"[{url}|{teams}]"
-                : $"[|{teams}]";
+            string? createdUrl = null;
+            var hasCreatedLink = streamLinksByGameId is not null && streamLinksByGameId.TryGetValue(game.Id, out createdUrl);
+            var hasSequentialLink = TryExpandStreamLink(firstStreamLink, index, out var sequentialUrl);
+            var label = hasCreatedLink
+                ? $"[{createdUrl}|{teams}]"
+                : hasSequentialLink
+                    ? $"[{sequentialUrl}|{teams}]"
+                    : $"[|{teams}]";
             lines.Add($"⚡{game.Time} - {label}");
         }
 

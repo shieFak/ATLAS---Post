@@ -25,15 +25,15 @@ public static class PackageBuilder
         string venue,
         string hashtags,
         string firstStreamLink,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string>? streamLinksByGameId = null)
     {
         var displayName = PostBuilder.DisplayTournament(tournamentName);
         Directory.CreateDirectory(folderPath);
 
-        var gameLines = games.Select(game =>
-            $"{displayName}: {game.HomeTeam} - {game.GuestTeam} | {date:dd.MM.yyyy}");
+        var gameLines = games.Select(game => GameTitle(displayName, date, game));
         var idLines = games.Select(game => $"{game.Number:00} — {game.Id}");
-        var post = PostBuilder.BuildPost(displayName, date, games, intro, venue, hashtags, firstStreamLink);
+        var post = PostBuilder.BuildPost(displayName, date, games, intro, venue, hashtags, firstStreamLink, streamLinksByGameId);
         var utf8 = new UTF8Encoding(false);
 
         await File.WriteAllTextAsync(Path.Combine(folderPath, "games.txt"), string.Join(Environment.NewLine, gameLines), utf8, cancellationToken);
@@ -54,6 +54,9 @@ public static class PackageBuilder
         safe = Regex.Replace(safe, @"\s+", "_").Trim(' ', '.', '_');
         return safe + $"_{game.Id}.png";
     }
+
+    public static string GameTitle(string tournamentName, DateTime date, GameRecord game) =>
+        $"{PostBuilder.DisplayTournament(tournamentName)}: {game.HomeTeam} - {game.GuestTeam} | {date:dd.MM.yyyy}";
 
     public static string ScheduleFileName(string tournamentName, DateTime date, string category)
     {

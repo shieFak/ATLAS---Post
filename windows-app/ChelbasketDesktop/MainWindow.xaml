@@ -167,7 +167,7 @@
                 <Border Grid.Column="1" Background="#1D4A70" CornerRadius="15" Padding="13,8" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <Ellipse Width="7" Height="7" Fill="#67D5A2" VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <TextBlock Text="Локальная подготовка · без публикации в VK" Foreground="#E0ECF5" FontSize="10" VerticalAlignment="Center" />
+                    <TextBlock Text="ТВ-пакет · создание эфиров по команде" Foreground="#E0ECF5" FontSize="10" VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
             </Grid>
@@ -255,6 +255,46 @@
                                 <TextBox x:Name="PostPreviewBox" Style="{StaticResource PostPreviewStyle}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="13" BorderThickness="0" />
                             </Border>
                         </TabItem>
+                        <TabItem x:Name="VkStreamsTab" Header="Трансляции VK">
+                            <Grid Margin="10">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Border Background="#F4F8FB" CornerRadius="10" Padding="14" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="Подготовка эфиров в VK Видео" Foreground="#102A43" FontSize="16" FontWeight="Bold" />
+                                        <TextBlock Text="Войди в VK в окне ниже. Выбери игру в таблице, и приложение заполнит название по games.txt и оставит описание пустым. Проверь параметры и сам нажми «Создать трансляцию» на странице VK." Foreground="#77899B" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0" />
+                                    </StackPanel>
+                                </Border>
+                                <DockPanel Grid.Row="1" Margin="0,0,0,9">
+                                    <TextBlock Text="В браузере открой пробную группу и форму эфира" VerticalAlignment="Center" Foreground="#52677A" Margin="0,0,12,0" />
+                                    <Button x:Name="ConnectVkButton" Content="Открыть VK Видео" Click="OpenVkVideo_Click" Margin="0,0,8,0" />
+                                    <Button x:Name="CreateStreamsButton" Content="Заполнить эфир для выбранной игры" Style="{StaticResource PrimaryButton}" Click="FillStreamForm_Click" IsEnabled="False" />
+                                </DockPanel>
+                                <Grid Grid.Row="2">
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                    <TextBlock x:Name="VkStreamsStatusText" Text="Подключи VK и найди игры, чтобы подготовить эфиры." Foreground="#77899B" FontSize="11" Margin="2,0,0,8" TextWrapping="Wrap" />
+                                    <DataGrid x:Name="VkStreamsGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" CanUserSortColumns="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" BorderThickness="0" RowHeaderWidth="0" Background="White" HorizontalGridLinesBrush="#EEF2F5" SelectionMode="Single" AlternationCount="2">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="#" Binding="{Binding Game.Number, StringFormat={}{0:00}}" Width="52" />
+                                            <DataGridTextColumn Header="ВРЕМЯ" Binding="{Binding Game.Time}" Width="72" />
+                                            <DataGridTextColumn Header="НАЗВАНИЕ ЭФИРА" Binding="{Binding Title}" Width="*" />
+                                            <DataGridTextColumn Header="СТАТУС" Binding="{Binding Status}" Width="145" />
+                                            <DataGridHyperlinkColumn Header="ССЫЛКА" Binding="{Binding Link}" Width="220" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                                <DockPanel Grid.Row="3" Margin="0,8,0,0">
+                                    <Button Content="Сохранить ссылку текущей игры" Click="SaveCurrentStreamLink_Click" Margin="0,0,8,0" />
+                                    <TextBox x:Name="VkCurrentLinkBox" ToolTip="Если VK не открыл страницу эфира автоматически, вставь сюда ссылку после создания" VerticalContentAlignment="Center" />
+                                </DockPanel>
+                                <ContentControl x:Name="VkVideoBrowserHost" Grid.Row="4" Height="380" Visibility="Collapsed" />
+                            </Grid>
+                        </TabItem>
                         <TabItem x:Name="BrowserTab" Header="Страница экспорта"><wv2:WebView2 x:Name="CoverBrowser" DefaultBackgroundColor="#FFFFFF" /></TabItem>
                     </TabControl>
                     <Grid Grid.Row="2" Margin="2,14,2,0">
@@ -271,7 +311,7 @@
 
         <Grid Grid.Row="2" Margin="25,0">
             <TextBlock Text="ЧЕЛБАСКЕТ · ТВ-ПАКЕТ" Foreground="#8A9AAA" FontSize="9" FontWeight="Bold" VerticalAlignment="Center" />
-            <TextBlock Text="Публикация в VK не выполняется" Foreground="#8A9AAA" FontSize="9" VerticalAlignment="Center" HorizontalAlignment="Right" />
+            <TextBlock Text="Посты не публикуются · эфир проверяется перед созданием" Foreground="#8A9AAA" FontSize="9" VerticalAlignment="Center" HorizontalAlignment="Right" />
         </Grid>
     </Grid>
 </Window>

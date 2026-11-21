@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.IO;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 
@@ -84,21 +85,21 @@ public sealed class ChelbasketClient : IDisposable
             });
         }
 
+        // The tournament page contains a broad list of fixtures and its visible date
+        // text may omit the year. The selected-day schedule endpoint is authoritative:
+        // use its GameID set to prevent same-day games from another season/date view
+        // from leaking into the result.
+        var scheduleDetails = await GetScheduleDetailsAsync(tournament, selectedDate, cancellationToken);
         var orderedGames = games
             .GroupBy(game => game.Id, StringComparer.Ordinal)
             .Select(group => group.First())
+            .Where(game => scheduleDetails.ContainsKey(game.Id))
             .OrderBy(game => TimeSpan.Parse(game.Time))
             .Select((game, index) => { game.Number = index + 1; return game; })
             .ToArray();
 
-        try
-        {
-            var scheduleDetails = await GetScheduleDetailsAsync(tournament, selectedDate, cancellationToken);
-            foreach (var game in orderedGames)
-                if (scheduleDetails.TryGetValue(game.Id, out var hall)) game.Hall = hall;
-        }
-        catch (HttpRequestException) { }
-        catch (JsonException) { }
+        foreach (var game in orderedGames)
+            if (scheduleDetails.TryGetValue(game.Id, out var hall)) game.Hall = hall;
 
         return orderedGames;
     }
@@ -119,7 +120,8 @@ public sealed class ChelbasketClient : IDisposable
         response.EnsureSuccessStatusCode();
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (!json.RootElement.TryGetProperty("schedule", out var schedule) || schedule.ValueKind != JsonValueKind.Array) return result;
+        if (!json.RootElement.TryGetProperty("schedule", out var schedule) || schedule.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("Сайт вернул расписание без списка игр на выбранную дату.");
         foreach (var item in schedule.EnumerateArray())
         {
             var id = item.TryGetProperty("GameID", out var idElement) ? idElement.ToString() : string.Empty;

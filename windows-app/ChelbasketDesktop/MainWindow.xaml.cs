@@ -1,8 +1,10 @@
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Web;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -14,8 +16,13 @@ public partial class MainWindow : Window
 {
     private readonly ChelbasketClient _client = new();
     private List<GameRecord> _games = [];
+    private List<VkStreamRow> _vkStreamRows = [];
+    private readonly Dictionary<string, string> _createdStreamLinks = LoadCreatedStreamLinks();
     private string? _lastOutputFolder;
     private bool _browserReady;
+    private bool _vkBrowserReady;
+    private WebView2? _vkVideoBrowser;
+    private string? _pendingVkGameId;
     private bool _editingAutoFields;
     private bool _userEditedIntro;
     private bool _userEditedHashtags;
@@ -31,6 +38,7 @@ public partial class MainWindow : Window
     {
         GameDatePicker.SelectedDate = DateTime.Today;
         OutputFolderBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ChelbasketPackages");
+        VkStreamsStatusText.Text = "Открой VK Видео, войди в аккаунт и открой форму создания трансляции.";
         StatusText.Text = "Загружаю список турниров…";
         try
         {
@@ -109,6 +117,7 @@ public partial class MainWindow : Window
         {
             var games = await _client.GetGamesForDateAsync(tournament, date);
             _games = games.ToList();
+            RefreshVkStreamRows(tournament, date);
             GamesGrid.ItemsSource = _games;
             HallFilterCombo.Items.Clear();
             HallFilterCombo.Items.Add(new ComboBoxItem { Content = "Все залы" });
@@ -116,6 +125,7 @@ public partial class MainWindow : Window
                 HallFilterCombo.Items.Add(new ComboBoxItem { Content = hall });
             HallFilterCombo.SelectedIndex = 0;
             CreatePackageButton.IsEnabled = _games.Count > 0;
+            CreateStreamsButton.IsEnabled = _games.Count > 0;
             CopyPostButton.IsEnabled = _games.Count > 0;
             SummaryText.Text = _games.Count == 0
                 ? "На эту дату игры не найдены."
@@ -160,6 +170,8 @@ public partial class MainWindow : Window
         _lastOutputFolder = null;
         var games = _games.ToList();
         var gamesToDownload = games.Where(game => game.IsSelected).ToList();
+        var reusedCoverCount = 0;
+        var downloadedCoverCount = 0;
         foreach (var game in games.Where(game => !game.IsSelected)) game.Status = "Не выбрана";
         string? packageFolder = null;
         var errors = new List<string>();
@@ -167,6 +179,7 @@ public partial class MainWindow : Window
         {
             packageFolder = PackageBuilder.CreatePackageFolder(outputRoot, tournament.Name, date);
             _lastOutputFolder = packageFolder;
+            var existingCovers = IndexExistingCovers(outputRoot, packageFolder);
 
             try
             {
@@ -186,22 +199,39 @@ public partial class MainWindow : Window
                 game.Status = "Загружается…";
                 GamesGrid.Items.Refresh();
 
-                if (!_browserReady)
-                {
-                    game.Status = "Нет браузера";
-                    continue;
-                }
-
                 try
                 {
-                    await NavigateToCoverAsync(game.CoverUrl);
-                    await WaitForCoverReadyAsync();
-                    await UpdateTeamsFromCoverPageAsync(game);
                     var targetPath = Path.Combine(packageFolder, PackageBuilder.CoverFileName(game));
-                    await TriggerCoverDownloadAsync(targetPath);
-                    await VerifyPngAsync(targetPath);
+                    var reused = false;
+                    if (existingCovers.TryGetValue(game.Id, out var existingPath))
+                    {
+                        try
+                        {
+                            await VerifyPngAsync(existingPath);
+                            File.Copy(existingPath, targetPath, overwrite: false);
+                            await VerifyPngAsync(targetPath);
+                            reused = true;
+                            reusedCoverCount++;
+                        }
+                        catch
+                        {
+                            TryDeletePartialCover(packageFolder, game);
+                        }
+                    }
+
+                    if (!reused)
+                    {
+                        if (!_browserReady) throw new InvalidOperationException("Встроенный браузер не запустился, обложку пришлось пропустить.");
+                        await NavigateToCoverAsync(game.CoverUrl);
+                        await WaitForCoverReadyAsync();
+                        await UpdateTeamsFromCoverPageAsync(game);
+                        targetPath = Path.Combine(packageFolder, PackageBuilder.CoverFileName(game));
+                        await TriggerCoverDownloadAsync(targetPath);
+                        await VerifyPngAsync(targetPath);
+                        downloadedCoverCount++;
+                    }
                     game.CoverPath = targetPath;
-                    game.Status = "Скачана";
+                    game.Status = reused ? "Взята из папки" : "Скачана";
                 }
                 catch (Exception ex)
                 {
@@ -236,14 +266,15 @@ public partial class MainWindow : Window
             StatusText.Text = "Сохраняю тексты и собираю ZIP…";
             var result = await PackageBuilder.WritePackageAsync(
                 packageFolder, tournament.Name, date, games,
-                IntroBox.Text, VenueBox.Text, HashtagsBox.Text, firstLink);
+                IntroBox.Text, VenueBox.Text, HashtagsBox.Text, firstLink,
+                streamLinksByGameId: _createdStreamLinks);
             _lastOutputFolder = result.FolderPath;
             WorkProgress.Value = 100;
             PreviewTabs.SelectedIndex = 0;
             OpenOutputButton.IsEnabled = true;
             var scheduleStatus = scheduleDownloaded ? "расписание скачано" : "без расписания";
-            StatusText.Text = $"Найдено {result.GameCount} игр, выбрано {gamesToDownload.Count}, скачано {result.CoverCount} обложек, {scheduleStatus}. Папка и ZIP готовы.";
-            SummaryText.Text = $"Готово · {result.GameCount} игр · выбрано {gamesToDownload.Count} · {result.CoverCount} обложек · {scheduleStatus}";
+            StatusText.Text = $"Найдено {result.GameCount} игр, выбрано {gamesToDownload.Count}, новых обложек {downloadedCoverCount}, взято из папки {reusedCoverCount}, {scheduleStatus}. Папка и ZIP готовы.";
+            SummaryText.Text = $"Готово · {result.GameCount} игр · выбрано {gamesToDownload.Count} · скачано {downloadedCoverCount} · повторно использовано {reusedCoverCount} · {scheduleStatus}";
 
             if (errors.Count > 0)
             {
@@ -459,6 +490,37 @@ public partial class MainWindow : Window
             throw new InvalidDataException("Скачанный файл не распознан как PNG-обложка.");
     }
 
+    private static Dictionary<string, string> IndexExistingCovers(string outputRoot, string currentPackageFolder)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        var currentFullPath = Path.GetFullPath(currentPackageFolder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var directories = new List<string> { outputRoot };
+        try { directories.AddRange(Directory.EnumerateDirectories(outputRoot, "*", SearchOption.TopDirectoryOnly)); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+
+        foreach (var directory in directories)
+        {
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(directory, "*.png", SearchOption.TopDirectoryOnly))
+                {
+                    var fullPath = Path.GetFullPath(file);
+                    if (fullPath.StartsWith(currentFullPath, StringComparison.OrdinalIgnoreCase)) continue;
+                    var stem = Path.GetFileNameWithoutExtension(file);
+                    var separator = stem.LastIndexOf('_');
+                    if (separator < 0) continue;
+                    var gameId = stem[(separator + 1)..];
+                    if (gameId.Length == 0 || !gameId.All(char.IsDigit)) continue;
+                    result.TryAdd(gameId, fullPath);
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return result;
+    }
+
     private static void TryDeletePartialCover(string packageFolder, GameRecord game)
     {
         try
@@ -479,7 +541,8 @@ public partial class MainWindow : Window
             return;
         }
         PostPreviewBox.Text = PostBuilder.BuildPost(
-            tournament.Name, date, _games, IntroBox.Text, VenueBox.Text, HashtagsBox.Text, FirstLinkBox.Text);
+            tournament.Name, date, _games, IntroBox.Text, VenueBox.Text, HashtagsBox.Text, FirstLinkBox.Text,
+            _createdStreamLinks);
         CopyPostButton.IsEnabled = true;
     }
 
@@ -497,8 +560,10 @@ public partial class MainWindow : Window
         IntroBox.IsEnabled = !value;
         VenueBox.IsEnabled = !value;
         HashtagsBox.IsEnabled = !value;
+        ConnectVkButton.IsEnabled = !value;
         CopyPostButton.IsEnabled = !value && _games.Count > 0;
         CreatePackageButton.IsEnabled = !value && _games.Count > 0;
+        CreateStreamsButton.IsEnabled = !value && _games.Count > 0;
     }
 
     private void HallFilter_Changed(object sender, SelectionChangedEventArgs e)
@@ -511,6 +576,173 @@ public partial class MainWindow : Window
             (string.IsNullOrWhiteSpace(hall) || hall.Equals("Все залы", StringComparison.CurrentCultureIgnoreCase) ||
              game.Hall.Equals(hall, StringComparison.CurrentCultureIgnoreCase));
         view.Refresh();
+    }
+
+    private void RefreshVkStreamRows(TournamentInfo tournament, DateTime date)
+    {
+        _vkStreamRows = _games.Select(game => new VkStreamRow
+        {
+            Game = game,
+            Title = PackageBuilder.GameTitle(tournament.Name, date, game),
+            Link = _createdStreamLinks.GetValueOrDefault(game.Id, string.Empty),
+            Status = _createdStreamLinks.ContainsKey(game.Id) ? "Создан" : "Ожидает"
+        }).ToList();
+        VkStreamsGrid.ItemsSource = _vkStreamRows;
+        CreateStreamsButton.IsEnabled = _games.Count > 0;
+    }
+
+    private async Task EnsureVkVideoBrowserAsync()
+    {
+        if (_vkBrowserReady) return;
+        var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChelbasketTV", "VkVideoBrowser");
+        Directory.CreateDirectory(userData);
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded);
+        var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
+        _vkVideoBrowser = new WebView2 { Height = 380, Visibility = Visibility.Visible };
+        VkVideoBrowserHost.Content = _vkVideoBrowser;
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded);
+        await _vkVideoBrowser.EnsureCoreWebView2Async(environment);
+        _vkVideoBrowser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+        _vkVideoBrowser.CoreWebView2.Settings.IsStatusBarEnabled = true;
+        _vkVideoBrowser.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        _vkBrowserReady = true;
+    }
+
+    private WebView2 VkVideoBrowser => _vkVideoBrowser ?? throw new InvalidOperationException("Браузер VK ещё не открыт.");
+
+    private async void OpenVkVideo_Click(object sender, RoutedEventArgs e)
+    {
+        VkVideoBrowserHost.Visibility = Visibility.Visible;
+        PreviewTabs.SelectedItem = VkStreamsTab;
+        VkStreamsStatusText.Text = "Открываю встроенный браузер VK Видео…";
+        try
+        {
+            await EnsureVkVideoBrowserAsync();
+            VkStreamsStatusText.Text = "Войди в VK вручную, затем открой форму создания трансляции. Этот вход останется в приложении.";
+            VkVideoBrowser.CoreWebView2.Navigate("https://vkvideo.ru/");
+        }
+        catch (Exception ex)
+        {
+            VkStreamsStatusText.Text = "Не удалось открыть VK Видео.";
+            MessageBox.Show(this, ex.Message, "VK Видео", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void FillStreamForm_Click(object sender, RoutedEventArgs e)
+    {
+        if (VkStreamsGrid.SelectedItem is not VkStreamRow row)
+        {
+            MessageBox.Show(this, "Сначала выбери игру в таблице.", "Выбери игру", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_vkVideoBrowser?.Source?.AbsoluteUri))
+        {
+            MessageBox.Show(this, "Сначала открой VK Видео и перейди к форме создания эфира.", "VK Видео не открыто", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (_createdStreamLinks.ContainsKey(row.Game.Id))
+        {
+            MessageBox.Show(this, "Для этой игры уже сохранена ссылка на эфир.", "Эфир уже отмечен", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        SetBusy(true);
+        try
+        {
+            var titleJson = JsonSerializer.Serialize(row.Title);
+            var script = "(() => {" +
+                "const visible=e=>!!(e&&e.getClientRects().length);" +
+                "const nodes=[...document.querySelectorAll('input,textarea,[contenteditable=true]')].filter(visible);" +
+                "const meta=e=>[(e.getAttribute('placeholder')||''),(e.getAttribute('aria-label')||''),(e.getAttribute('name')||''),(e.labels?[...e.labels].map(x=>x.innerText).join(' '):''),(e.parentElement?.innerText||'')].join(' ').toLowerCase();" +
+                "const title=nodes.find(e=>/(назван|смотрю фильмы|название эфира)/i.test(meta(e)));" +
+                "const desc=nodes.find(e=>/(расскажите, о чём|описание)/i.test(meta(e)));" +
+                "if(!title)return {ok:false,message:'Не вижу поле названия. Открой на VK первый шаг формы создания трансляции.'};" +
+                "const set=(e,v)=>{const p=e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const d=Object.getOwnPropertyDescriptor(p,'value');if(d?.set)d.set.call(e,v);else e.textContent=v;e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));e.dispatchEvent(new Event('change',{bubbles:true}));};" +
+                "if(!desc)return {ok:false,message:'Не вижу поле описания. Открой первый шаг формы эфира — описание останется пустым.'};" +
+                $"set(title,{titleJson});" +
+                "set(desc,'');" +
+                "const sport=[...document.querySelectorAll('button,[role=button]')].find(e=>visible(e)&&e.innerText.trim()==='Спорт');if(sport)sport.click();" +
+                "const next=[...document.querySelectorAll('button,[role=button]')].find(e=>visible(e)&&e.innerText.trim()==='Далее');if(next)next.click();" +
+                "return {ok:true,descriptionCleared:true,sportSelected:!!sport,nextClicked:!!next};" +
+                "})()";
+            var raw = await VkVideoBrowser.CoreWebView2.ExecuteScriptAsync(script);
+            using var result = JsonDocument.Parse(raw);
+            var root = result.RootElement;
+            if (!root.GetProperty("ok").GetBoolean())
+            {
+                VkStreamsStatusText.Text = root.GetProperty("message").GetString() ?? "Открой форму создания трансляции.";
+                return;
+            }
+
+            _pendingVkGameId = row.Game.Id;
+            row.Status = "Форма заполнена — проверь и создай в VK";
+            VkStreamsGrid.Items.Refresh();
+            var sportText = root.GetProperty("sportSelected").GetBoolean() ? "Категория «Спорт» выбрана." : "Выбери категорию «Спорт» вручную.";
+            VkStreamsStatusText.Text = root.GetProperty("nextClicked").GetBoolean()
+                ? $"Название заполнено, описание пустое. {sportText} Проверь настройки на странице VK и создай эфир вручную."
+                : $"Название заполнено, описание пустое. {sportText} Перейди дальше вручную и проверь параметры перед созданием.";
+        }
+        catch (Exception ex)
+        {
+            VkStreamsStatusText.Text = "Не получилось заполнить форму VK.";
+            MessageBox.Show(this, ex.Message, "Заполнение формы", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally { SetBusy(false); }
+    }
+
+    private void SaveCurrentStreamLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_pendingVkGameId))
+        {
+            MessageBox.Show(this, "Сначала заполни форму для игры и создай эфир в VK.", "Нет выбранной игры", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var value = string.IsNullOrWhiteSpace(VkCurrentLinkBox.Text)
+            ? _vkVideoBrowser?.Source?.AbsoluteUri
+            : VkCurrentLinkBox.Text.Trim();
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var link) ||
+            !(link.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) || link.Host.Equals("vk.ru", StringComparison.OrdinalIgnoreCase)) ||
+            !link.AbsolutePath.StartsWith("/live", StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this, "Вставь ссылку на созданный эфир вида https://vkvideo.ru/live-... или открой страницу эфира во встроенном браузере.",
+                "Ссылка на эфир не найдена", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        _createdStreamLinks[_pendingVkGameId] = link.AbsoluteUri;
+        PersistCreatedStreamLinks();
+        var row = _vkStreamRows.FirstOrDefault(item => item.Game.Id == _pendingVkGameId);
+        if (row is not null)
+        {
+            row.Link = link.AbsoluteUri;
+            row.Status = "Ссылка сохранена";
+            VkStreamsGrid.Items.Refresh();
+        }
+        VkCurrentLinkBox.Clear();
+        _pendingVkGameId = null;
+        UpdatePostPreview();
+        VkStreamsStatusText.Text = "Ссылка сохранена в пост и файл пакета. Выбери следующую игру.";
+    }
+
+    private static string StreamLinksPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChelbasketTV", "vk-stream-links.json");
+
+    private static Dictionary<string, string> LoadCreatedStreamLinks()
+    {
+        try
+        {
+            return File.Exists(StreamLinksPath)
+                ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(StreamLinksPath)) ?? new(StringComparer.Ordinal)
+                : new(StringComparer.Ordinal);
+        }
+        catch { return new(StringComparer.Ordinal); }
+    }
+
+    private void PersistCreatedStreamLinks()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(StreamLinksPath)!);
+        File.WriteAllText(StreamLinksPath, JsonSerializer.Serialize(_createdStreamLinks));
     }
 
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)

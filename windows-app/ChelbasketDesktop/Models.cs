@@ -19,3 +19,11 @@ public sealed class GameRecord
 }
 
 public sealed record DownloadResult(string FolderPath, string ZipPath, int GameCount, int CoverCount);
+
+public sealed class VkStreamRow
+{
+    public required GameRecord Game { get; init; }
+    public required string Title { get; init; }
+    public string Status { get; set; } = "Ожидает";
+    public string Link { get; set; } = string.Empty;
+}
