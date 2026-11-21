@@ -1,0 +1,9 @@
+.dotnet-cli-home/
+.nuget-packages/
+.nuget-feed/
+**/bin/
+**/obj/
+windows-app/publish/
+.vs/
+*.user
+*.suo
