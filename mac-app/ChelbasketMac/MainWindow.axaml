@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:web="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.WebView" xmlns:models="clr-namespace:ChelbasketDesktop;assembly=ChelbasketMac" x:Class="ChelbasketMac.MainWindow" Title="Челбаскет — ТВ-пакет" Width="1440" Height="920" MinWidth="1100" MinHeight="720" Background="#F2F5F8">
+  <Grid RowDefinitions="88,*,34">
+    <Border Background="#0B3458" Padding="26,0">
+      <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+          <Border Width="48" Height="48" CornerRadius="14" Background="#F47B32"><TextBlock Text="◉" FontSize="32" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+          <StackPanel><TextBlock Text="ЧЕЛБАСКЕТ" FontSize="18" FontWeight="ExtraBold" Foreground="White"/><TextBlock Text="МАТЧДЭЙ · ТВ-ПАКЕТ · macOS" FontSize="10" FontWeight="Bold" Foreground="#BBD0E2" Margin="0,4,0,0"/></StackPanel>
+        </StackPanel>
+        <Border Grid.Column="1" Background="#1D4A70" CornerRadius="18" Padding="14,8"><TextBlock Text="●  обложки · посты · расписание" Foreground="#E5F0F7" FontSize="11"/></Border>
+      </Grid>
+    </Border>
+    <Grid Grid.Row="1" ColumnDefinitions="350,16,*" Margin="20,18,20,12">
+      <Border Grid.Column="0" Background="White" CornerRadius="16" Padding="20" BorderBrush="#E2E9EF" BorderThickness="1">
+        <DockPanel LastChildFill="True">
+          <StackPanel DockPanel.Dock="Bottom" Spacing="9" Margin="0,12,0,0">
+            <Button x:Name="FindButton" Content="НАЙТИ ИГРЫ" Classes="primary" Click="FindGames_Click"/>
+            <Button x:Name="BuildButton" Content="Скачать обложки и собрать пакет  →" Classes="accent" Click="BuildPackage_Click" IsEnabled="False"/>
+            <TextBlock x:Name="StatusText" Text="Загружаю список турниров…" Foreground="#63788C" FontSize="11" TextWrapping="Wrap" Margin="2,4,2,0"/>
+            <ProgressBar x:Name="Progress" Minimum="0" Maximum="100" Height="5" IsVisible="False"/>
+          </StackPanel>
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="7">
+              <Border Background="#FFF3E9" CornerRadius="6" Padding="8,5" HorizontalAlignment="Left"><TextBlock Text="НОВЫЙ ИГРОВОЙ ДЕНЬ" Foreground="#C75B1B" FontSize="9" FontWeight="Bold"/></Border>
+              <TextBlock Text="Собрать пакет" Foreground="#102A43" FontSize="24" FontWeight="Bold" Margin="0,5,0,0"/>
+              <TextBlock Text="Выбери турнир и дату — материалы подготовятся автоматически." Foreground="#63788C" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10"/>
+              <TextBlock Text="ТУРНИР" Classes="field-label"/><ComboBox x:Name="TournamentCombo" PlaceholderText="Загружаю турниры…" SelectionChanged="Tournament_Changed"><ComboBox.ItemTemplate><DataTemplate x:DataType="models:TournamentInfo"><TextBlock Text="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+              <TextBlock Text="ДАТА ИГР" Classes="field-label"/><DatePicker x:Name="GameDatePicker" SelectedDateChanged="Date_Changed"/>
+              <Border Background="#F7F9FB" CornerRadius="10" Padding="12" Margin="0,7,0,0"><StackPanel Spacing="6"><TextBlock Text="РАСПИСАНИЕ" Classes="field-label"/><ComboBox x:Name="CategoryCombo" SelectedIndex="0"><ComboBoxItem Content="Автоматически (из сайта)"/><ComboBoxItem Content="Юноши"/><ComboBoxItem Content="Девушки"/><ComboBoxItem Content="Мужчины"/><ComboBoxItem Content="Женщины"/></ComboBox></StackPanel></Border>
+              <TextBlock Text="ПЕРВАЯ ССЫЛКА НА ТРАНСЛЯЦИЮ" Classes="field-label"/><TextBox x:Name="FirstLinkBox" PlaceholderText="https://vkvideo.ru/live-123456789_456239001" TextChanged="PostFields_Changed"/><TextBlock Text="Можно оставить пустым. ID следующих ссылок увеличиваются на +1." Classes="helper"/>
+              <TextBlock Text="ПАПКА РЕЗУЛЬТАТА" Classes="field-label"/><Grid ColumnDefinitions="*,Auto" ColumnSpacing="7"><TextBox x:Name="OutputFolderBox"/><Button Content="Обзор" Click="ChooseFolder_Click"/></Grid><TextBlock Text="В папке будут обложки, расписание, тексты и ZIP." Classes="helper"/>
+              <Border Height="1" Background="#E9EEF2" Margin="0,10,0,7"/>
+              <TextBlock Text="ТЕКСТ ПОСТА" Foreground="#102A43" FontSize="14" FontWeight="Bold"/>
+              <TextBlock Text="Вступление" Classes="field-label"/><TextBox x:Name="IntroBox" MinHeight="66" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" TextChanged="PostFields_Changed"/>
+              <TextBlock Text="Площадка и адрес" Classes="field-label"/><TextBox x:Name="VenueBox" PlaceholderText="Название зала и адрес" TextChanged="PostFields_Changed"/>
+              <TextBlock Text="Хештеги" Classes="field-label"/><TextBox x:Name="HashtagsBox" PlaceholderText="#баскетбол" TextChanged="PostFields_Changed"/>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+      <Border Grid.Column="2" Background="White" CornerRadius="16" Padding="22" BorderBrush="#E2E9EF" BorderThickness="1">
+        <Grid RowDefinitions="Auto,Auto,*">
+          <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="РАБОЧАЯ ОБЛАСТЬ" Foreground="#1682C4" FontSize="9" FontWeight="Bold"/><TextBlock x:Name="SummaryText" Text="Выбери турнир, дату и найди игры" Foreground="#102A43" FontSize="17" FontWeight="Bold" Margin="0,5,0,0"/></StackPanel><Button x:Name="CopyPostButton" Grid.Column="1" Content="Копировать пост" Click="CopyPost_Click" IsEnabled="False"/></Grid>
+          <TabControl x:Name="Tabs" Grid.Row="1" Margin="0,14,0,10">
+            <TabItem Header="Игры"><Grid RowDefinitions="Auto,Auto,*"><Grid ColumnDefinitions="Auto,240,*" ColumnSpacing="10" Margin="2,0,2,8"><TextBlock Text="Зал:" VerticalAlignment="Center" Foreground="#52677A"/><ComboBox x:Name="HallCombo" Grid.Column="1" SelectionChanged="HallFilter_Changed"/><TextBlock x:Name="SelectionText" Grid.Column="2" Text="Игры появятся после поиска" VerticalAlignment="Center" Foreground="#63788C"/></Grid><Grid Grid.Row="1" ColumnDefinitions="48,44,70,*,*,*,90,100" Background="#F5F8FA" Margin="0,0,0,3"><TextBlock Text="КАЧАТЬ" Grid.Column="0" FontSize="9" FontWeight="Bold" Margin="5"/><TextBlock Text="#" Grid.Column="1" FontSize="9" FontWeight="Bold" Margin="5"/><TextBlock Text="ВРЕМЯ" Grid.Column="2" FontSize="9" FontWeight="Bold" Margin="5"/><TextBlock Text="КОМАНДА 1" Grid.Column="3" FontSize="9" FontWeight="Bold" Margin="5"/><TextBlock Text="КОМАНДА 2" Grid.Column="4" FontSize="9" FontWeight="Bold" Margin="5"/><TextBlock Text="ЗАЛ" Grid.Column="5" FontSize="9" FontWeight="Bold" Margin="5"/><TextBlock Text="ID ИГРЫ" Grid.Column="6" FontSize="9" FontWeight="Bold" Margin="5"/><TextBlock Text="ОБЛОЖКА" Grid.Column="7" FontSize="9" FontWeight="Bold" Margin="5"/></Grid><ListBox x:Name="GamesGrid" Grid.Row="2" SelectionChanged="GameRow_Selected"><ListBox.ItemTemplate><DataTemplate x:DataType="models:GameRecord"><Border BorderBrush="#E5EBF0" BorderThickness="0,0,0,1" Padding="4,8"><Grid ColumnDefinitions="40,44,70,*,*,*,90,100"><CheckBox IsChecked="{Binding IsSelected}" Click="GameSelection_Click" HorizontalAlignment="Center"/><TextBlock Text="{Binding Number, StringFormat='00'}" Grid.Column="1" VerticalAlignment="Center"/><TextBlock Text="{Binding Time}" Grid.Column="2" VerticalAlignment="Center"/><TextBlock Text="{Binding HomeTeam}" Grid.Column="3" VerticalAlignment="Center" TextWrapping="Wrap" Margin="5,0"/><TextBlock Text="{Binding GuestTeam}" Grid.Column="4" VerticalAlignment="Center" TextWrapping="Wrap" Margin="5,0"/><TextBlock Text="{Binding Hall}" Grid.Column="5" VerticalAlignment="Center" TextWrapping="Wrap" Margin="5,0"/><TextBlock Text="{Binding Id}" Grid.Column="6" VerticalAlignment="Center"/><TextBlock Text="{Binding Status}" Grid.Column="7" VerticalAlignment="Center"/></Grid></Border></DataTemplate></ListBox.ItemTemplate></ListBox></Grid></TabItem>
+            <TabItem Header="Пост"><Grid RowDefinitions="Auto,*"><Button x:Name="CopyPostInnerButton" Content="Копировать пост" HorizontalAlignment="Right" Click="CopyPost_Click"/><TextBox x:Name="PostPreviewBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" FontFamily="Menlo,Consolas,monospace" FontSize="13" Padding="18" Background="#132A3E" Foreground="#F4F8FC" BorderThickness="0" IsReadOnly="True"/></Grid></TabItem>
+            <TabItem Header="Расписание и обложки"><Grid RowDefinitions="Auto,*"><TextBlock Text="Предпросмотр страницы федерации. Экспортируется PNG расписания и обложки выбранных игр." Foreground="#63788C" Margin="6,4,6,10"/><web:NativeWebView x:Name="SiteBrowser" Grid.Row="1"/></Grid></TabItem>
+            <TabItem Header="Трансляции VK"><Grid RowDefinitions="Auto,Auto,*"><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Открыть VK Видео" Click="OpenVk_Click"/><Button Content="Заполнить эфир для выбранной игры" Click="FillVkForm_Click"/><TextBlock x:Name="VkStatus" Text="Выбери матч во вкладке «Игры» и открой VK Видео" VerticalAlignment="Center" Foreground="#63788C"/></StackPanel><Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,10"><TextBox x:Name="VkLinkBox" PlaceholderText="Ссылка на созданный эфир VK Видео"/><Button Content="Сохранить ссылку для игры" Click="SaveVkLink_Click"/></Grid><web:NativeWebView x:Name="VkBrowser" Grid.Row="2" IsVisible="False"/></Grid></TabItem>
+          </TabControl>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" VerticalAlignment="Bottom"><TextBlock x:Name="BottomStatus" Text="Матчи загружаются с сайта федерации" Foreground="#63788C" FontSize="10" VerticalAlignment="Center"/><Button x:Name="OpenFolderButton" Grid.Column="1" Content="Открыть папку" Click="OpenFolder_Click" IsEnabled="False"/></Grid>
+        </Grid>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="2" Margin="24,0"><TextBlock Text="ЧЕЛБАСКЕТ · ТВ-ПАКЕТ" Foreground="#7C90A4" FontSize="9" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="Посты не публикуются · трансляции создаются по команде" Foreground="#7C90A4" FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+  </Grid>
+  <Window.Styles>
+    <Style Selector="TextBlock.field-label"><Setter Property="Foreground" Value="#52677A"/><Setter Property="FontSize" Value="10"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,8,0,0"/></Style>
+    <Style Selector="TextBlock.helper"><Setter Property="Foreground" Value="#7C90A4"/><Setter Property="FontSize" Value="10"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+    <Style Selector="Button"><Setter Property="Padding" Value="14,10"/><Setter Property="CornerRadius" Value="8"/></Style>
+    <Style Selector="Button.primary"><Setter Property="Background" Value="#1682C4"/><Setter Property="Foreground" Value="White"/><Setter Property="FontWeight" Value="Bold"/></Style>
+    <Style Selector="Button.accent"><Setter Property="Background" Value="#F47B32"/><Setter Property="Foreground" Value="White"/><Setter Property="FontWeight" Value="Bold"/></Style>
+  </Window.Styles>
+</Window>

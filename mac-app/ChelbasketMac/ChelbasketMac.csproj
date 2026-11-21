@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Version>1.1.0</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseAppHost>true</UseAppHost>
+    <AvaloniaVersion Condition="'$(AvaloniaVersion)' == ''">12.0.0</AvaloniaVersion>
+    <WebViewPackageVersion Condition="'$(WebViewPackageVersion)' == ''">12.0.0</WebViewPackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="[$(AvaloniaVersion)]" />
+    <PackageReference Include="Avalonia.Desktop" Version="[$(AvaloniaVersion)]" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="[$(AvaloniaVersion)]" />
+    <PackageReference Include="Avalonia.Controls.WebView" Version="[$(WebViewPackageVersion)]" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../windows-app/ChelbasketDesktop/ChelbasketClient.cs" Link="Shared/ChelbasketClient.cs" />
+    <Compile Include="../../windows-app/ChelbasketDesktop/Models.cs" Link="Shared/Models.cs" />
+    <Compile Include="../../windows-app/ChelbasketDesktop/PackageBuilder.cs" Link="Shared/PackageBuilder.cs" />
+    <Compile Include="../../windows-app/ChelbasketDesktop/PostBuilder.cs" Link="Shared/PostBuilder.cs" />
+    <Compile Include="../../windows-app/ChelbasketDesktop/UpdateChecker.cs" Link="Shared/UpdateChecker.cs" />
+  </ItemGroup>
+</Project>

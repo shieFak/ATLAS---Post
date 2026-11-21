@@ -1,0 +1,68 @@
+name: macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['app-v*']
+    paths:
+      - 'mac-app/**'
+      - 'windows-app/ChelbasketDesktop/ChelbasketClient.cs'
+      - 'windows-app/ChelbasketDesktop/Models.cs'
+      - 'windows-app/ChelbasketDesktop/PackageBuilder.cs'
+      - 'windows-app/ChelbasketDesktop/PostBuilder.cs'
+      - '.github/workflows/macos-app.yml'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            runner: macos-15
+          - rid: osx-x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Set application version
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' mac-app/ChelbasketMac/ChelbasketMac.csproj | head -n 1)
+          if [[ "$GITHUB_REF_NAME" =~ ^app-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then VERSION="${BASH_REMATCH[1]}"; fi
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Publish app
+        run: dotnet publish mac-app/ChelbasketMac/ChelbasketMac.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:Version=${{ env.APP_VERSION }} -o publish/${{ matrix.rid }}
+      - name: Create app bundle
+        shell: bash
+        run: |
+          APP="ChelbasketTV-${{ matrix.rid }}.app"
+          mkdir -p "publish/bundle/$APP/Contents/MacOS" "publish/bundle/$APP/Contents/Resources"
+          cp -R "publish/${{ matrix.rid }}/." "publish/bundle/$APP/Contents/MacOS/"
+          cat > "publish/bundle/$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>Chelbasket TV</string>
+            <key>CFBundleDisplayName</key><string>Челбаскет ТВ-пакет</string>
+            <key>CFBundleIdentifier</key><string>ru.chelbasket.tvpackage</string>
+            <key>CFBundleVersion</key><string>${{ env.APP_VERSION }}</string>
+            <key>CFBundleShortVersionString</key><string>${{ env.APP_VERSION }}</string>
+            <key>CFBundleExecutable</key><string>ChelbasketMac</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          chmod +x "publish/bundle/$APP/Contents/MacOS/ChelbasketMac"
+          ditto -c -k --sequesterRsrc --keepParent "publish/bundle/$APP" "ChelbasketTV-${{ matrix.rid }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChelbasketTV-${{ matrix.rid }}
+          path: ChelbasketTV-${{ matrix.rid }}.zip
+          if-no-files-found: error
+          retention-days: 90
