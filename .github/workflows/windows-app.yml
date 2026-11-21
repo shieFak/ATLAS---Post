@@ -3,6 +3,7 @@ name: Windows app
 on:
   push:
     branches: [main]
+    tags: ['app-v*']
     paths:
       - 'windows-app/**'
       - 'NuGet.Config'
@@ -10,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -24,6 +25,14 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Set application version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content windows-app/ChelbasketDesktop/ChelbasketDesktop.csproj
+          $version = $project.Project.PropertyGroup.Version | Select-Object -First 1
+          if ($env:GITHUB_REF_NAME -match '^app-v(?<version>\d+\.\d+\.\d+)$') { $version = $Matches.version }
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+
       - name: Publish single-file Windows app
         run: >-
           dotnet publish windows-app/ChelbasketDesktop/ChelbasketDesktop.csproj
@@ -33,6 +42,7 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true
+          -p:Version=${{ env.APP_VERSION }}
           --output artifacts
 
       - name: Upload EXE artifact
@@ -42,3 +52,9 @@ jobs:
           path: artifacts/ChelbasketDesktop.exe
           if-no-files-found: error
           retention-days: 90
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$env:GITHUB_REF_NAME" artifacts/ChelbasketDesktop.exe --title "Челбаскет ТВ-пакет $env:APP_VERSION" --generate-notes

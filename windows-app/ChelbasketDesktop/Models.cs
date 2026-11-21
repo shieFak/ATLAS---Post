@@ -11,6 +11,8 @@ public sealed class GameRecord
     public required string HomeTeam { get; set; }
     public required string GuestTeam { get; set; }
     public required string GameUrl { get; init; }
+    public string Hall { get; set; } = string.Empty;
+    public bool IsSelected { get; set; } = true;
     public string CoverUrl { get; set; } = string.Empty;
     public string CoverPath { get; set; } = string.Empty;
     public string Status { get; set; } = "Ожидает";

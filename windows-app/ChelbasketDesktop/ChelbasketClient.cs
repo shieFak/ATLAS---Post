@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 
 namespace ChelbasketDesktop;
 
@@ -83,12 +84,49 @@ public sealed class ChelbasketClient : IDisposable
             });
         }
 
-        return games
+        var orderedGames = games
             .GroupBy(game => game.Id, StringComparer.Ordinal)
             .Select(group => group.First())
             .OrderBy(game => TimeSpan.Parse(game.Time))
             .Select((game, index) => { game.Number = index + 1; return game; })
             .ToArray();
+
+        try
+        {
+            var scheduleDetails = await GetScheduleDetailsAsync(tournament, selectedDate, cancellationToken);
+            foreach (var game in orderedGames)
+                if (scheduleDetails.TryGetValue(game.Id, out var hall)) game.Hall = hall;
+        }
+        catch (HttpRequestException) { }
+        catch (JsonException) { }
+
+        return orderedGames;
+    }
+
+    private async Task<Dictionary<string, string>> GetScheduleDetailsAsync(TournamentInfo tournament, DateTime date, CancellationToken cancellationToken)
+    {
+        var uri = new Uri(tournament.Url);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["compID"] = query["compID"] ?? query["region"] ?? "0",
+            ["region"] = query["region"] ?? query["compID"] ?? "0",
+            ["db"] = query["db"] ?? "reg",
+            ["datefrom"] = date.ToString("dd.MM.yyyy"),
+            ["dateto"] = date.ToString("dd.MM.yyyy")
+        });
+        using var response = await _http.PostAsync(new Uri(SiteRoot, "/ajax/infographic/schedule22/"), content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!json.RootElement.TryGetProperty("schedule", out var schedule) || schedule.ValueKind != JsonValueKind.Array) return result;
+        foreach (var item in schedule.EnumerateArray())
+        {
+            var id = item.TryGetProperty("GameID", out var idElement) ? idElement.ToString() : string.Empty;
+            var hall = item.TryGetProperty("ArenaRu", out var hallElement) ? WebUtility.HtmlDecode(hallElement.GetString() ?? string.Empty).Trim() : string.Empty;
+            if (!string.IsNullOrWhiteSpace(id)) result[id] = hall;
+        }
+        return result;
     }
 
     public async Task<string> GetHtmlAsync(Uri uri, CancellationToken cancellationToken = default)

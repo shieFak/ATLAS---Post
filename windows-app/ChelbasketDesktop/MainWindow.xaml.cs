@@ -5,6 +5,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Threading;
 
 namespace ChelbasketDesktop;
@@ -46,6 +47,22 @@ public partial class MainWindow : Window
                 $"Не удалось загрузить список турниров с сайта федерации. Проверь подключение к интернету и попробуй ещё раз.\n\n{ex.Message}",
                 "Нет доступа к расписанию", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+        _ = CheckForUpdateAsync();
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            var update = await UpdateChecker.CheckAsync();
+            if (update is null || !IsLoaded) return;
+            var result = MessageBox.Show(this,
+                $"Доступно обновление Челбаскет ТВ-пакета {update.Version}.\n\nУстановлена версия {UpdateChecker.CurrentVersion}. Открыть страницу скачивания?",
+                "Доступно обновление", MessageBoxButton.YesNo, MessageBoxImage.Information);
+            if (result == MessageBoxResult.Yes)
+                Process.Start(new ProcessStartInfo(update.ReleasePage.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch { }
     }
 
     private void Inputs_Changed(object sender, RoutedEventArgs e)
@@ -93,6 +110,11 @@ public partial class MainWindow : Window
             var games = await _client.GetGamesForDateAsync(tournament, date);
             _games = games.ToList();
             GamesGrid.ItemsSource = _games;
+            HallFilterCombo.Items.Clear();
+            HallFilterCombo.Items.Add(new ComboBoxItem { Content = "Все залы" });
+            foreach (var hall in _games.Select(game => game.Hall).Where(hall => !string.IsNullOrWhiteSpace(hall)).Distinct(StringComparer.CurrentCultureIgnoreCase).OrderBy(hall => hall, StringComparer.CurrentCultureIgnoreCase))
+                HallFilterCombo.Items.Add(new ComboBoxItem { Content = hall });
+            HallFilterCombo.SelectedIndex = 0;
             CreatePackageButton.IsEnabled = _games.Count > 0;
             CopyPostButton.IsEnabled = _games.Count > 0;
             SummaryText.Text = _games.Count == 0
@@ -137,6 +159,8 @@ public partial class MainWindow : Window
         SetBusy(true);
         _lastOutputFolder = null;
         var games = _games.ToList();
+        var gamesToDownload = games.Where(game => game.IsSelected).ToList();
+        foreach (var game in games.Where(game => !game.IsSelected)) game.Status = "Не выбрана";
         string? packageFolder = null;
         var errors = new List<string>();
         try
@@ -154,11 +178,11 @@ public partial class MainWindow : Window
                 errors.Add($"Не запустился WebView2: {ex.Message}");
             }
 
-            for (var index = 0; index < games.Count; index++)
+            for (var index = 0; index < gamesToDownload.Count; index++)
             {
-                var game = games[index];
-                WorkProgress.Value = index * 75.0 / games.Count;
-                StatusText.Text = $"Обложка {index + 1} из {games.Count}: {game.Time} · {game.HomeTeam} — {game.GuestTeam}";
+                var game = gamesToDownload[index];
+                WorkProgress.Value = index * 75.0 / gamesToDownload.Count;
+                StatusText.Text = $"Обложка {index + 1} из {gamesToDownload.Count}: {game.Time} · {game.HomeTeam} — {game.GuestTeam}";
                 game.Status = "Загружается…";
                 GamesGrid.Items.Refresh();
 
@@ -218,8 +242,8 @@ public partial class MainWindow : Window
             PreviewTabs.SelectedIndex = 0;
             OpenOutputButton.IsEnabled = true;
             var scheduleStatus = scheduleDownloaded ? "расписание скачано" : "без расписания";
-            StatusText.Text = $"Найдено {result.GameCount} игр, скачано {result.CoverCount} обложек, {scheduleStatus}. Папка и ZIP готовы.";
-            SummaryText.Text = $"Готово · {result.GameCount} игр · {result.CoverCount} обложек · {scheduleStatus}";
+            StatusText.Text = $"Найдено {result.GameCount} игр, выбрано {gamesToDownload.Count}, скачано {result.CoverCount} обложек, {scheduleStatus}. Папка и ZIP готовы.";
+            SummaryText.Text = $"Готово · {result.GameCount} игр · выбрано {gamesToDownload.Count} · {result.CoverCount} обложек · {scheduleStatus}";
 
             if (errors.Count > 0)
             {
@@ -465,6 +489,8 @@ public partial class MainWindow : Window
         TournamentCombo.IsEnabled = !value;
         GameDatePicker.IsEnabled = !value;
         ScheduleCategoryCombo.IsEnabled = !value;
+        HallFilterCombo.IsEnabled = !value;
+        GamesGrid.IsEnabled = !value;
         FirstLinkBox.IsEnabled = !value;
         OutputFolderBox.IsEnabled = !value;
         ChooseFolderButton.IsEnabled = !value;
@@ -473,6 +499,18 @@ public partial class MainWindow : Window
         HashtagsBox.IsEnabled = !value;
         CopyPostButton.IsEnabled = !value && _games.Count > 0;
         CreatePackageButton.IsEnabled = !value && _games.Count > 0;
+    }
+
+    private void HallFilter_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_windowInitialized || GamesGrid is null) return;
+        var view = CollectionViewSource.GetDefaultView(GamesGrid.ItemsSource);
+        if (view is null) return;
+        var hall = (HallFilterCombo.SelectedItem as ComboBoxItem)?.Content?.ToString();
+        view.Filter = item => item is GameRecord game &&
+            (string.IsNullOrWhiteSpace(hall) || hall.Equals("Все залы", StringComparison.CurrentCultureIgnoreCase) ||
+             game.Hall.Equals(hall, StringComparison.CurrentCultureIgnoreCase));
+        view.Refresh();
     }
 
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
