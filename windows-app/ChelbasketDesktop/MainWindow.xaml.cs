@@ -18,10 +18,12 @@ public partial class MainWindow : Window
     private bool _editingAutoFields;
     private bool _userEditedIntro;
     private bool _userEditedHashtags;
+    private bool _windowInitialized;
 
     public MainWindow()
     {
         InitializeComponent();
+        _windowInitialized = true;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -48,6 +50,7 @@ public partial class MainWindow : Window
 
     private void Inputs_Changed(object sender, RoutedEventArgs e)
     {
+        if (!_windowInitialized) return;
         if (!_editingAutoFields)
         {
             if (ReferenceEquals(sender, IntroBox)) _userEditedIntro = true;
@@ -444,6 +447,7 @@ public partial class MainWindow : Window
 
     private void UpdatePostPreview()
     {
+        if (!_windowInitialized || PostPreviewBox is null || CopyPostButton is null) return;
         if (_games.Count == 0 || TournamentCombo.SelectedItem is not TournamentInfo tournament || GameDatePicker.SelectedDate is not DateTime date)
         {
             PostPreviewBox.Text = string.Empty;
