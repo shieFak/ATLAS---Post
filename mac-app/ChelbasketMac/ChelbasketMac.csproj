@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Version>1.1.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseAppHost>true</UseAppHost>
-    <AvaloniaVersion Condition="'$(AvaloniaVersion)' == ''">12.0.0</AvaloniaVersion>
-    <WebViewPackageVersion Condition="'$(WebViewPackageVersion)' == ''">12.0.0</WebViewPackageVersion>
+    <AvaloniaVersion Condition="'$(AvaloniaVersion)' == ''">12.0.1</AvaloniaVersion>
+    <WebViewPackageVersion Condition="'$(WebViewPackageVersion)' == ''">12.0.1</WebViewPackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="[$(AvaloniaVersion)]" />

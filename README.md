@@ -38,6 +38,8 @@
 
 ## macOS-приложение
 
+Сборка для macOS 12 Monterey и новее использует встроенный .NET 8 runtime. Выбирай артефакт по процессору: Apple Silicon (`arm64`) или Intel (`x64`).
+
 1. Открой [сборки macOS-приложения в GitHub Actions](https://github.com/shieFak/CRBF_post/actions/workflows/macos-app.yml).
 2. Скачай самый свежий успешный артефакт для своего Mac: `ChelbasketTV-osx-arm64` для Apple Silicon (M1/M2/M3 и новее) или `ChelbasketTV-osx-x64` для Intel.
 3. Распакуй ZIP и перенеси `ChelbasketTV-….app` в папку «Программы».
