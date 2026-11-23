@@ -673,6 +673,7 @@ public partial class MainWindow : Window
         };
         _vkBrowserReady = true;
         ExpandVkBrowserButton.IsEnabled = true;
+        ResetVkSessionButton.IsEnabled = true;
         RefreshVkActionButtons();
     }
 
@@ -703,6 +704,30 @@ public partial class MainWindow : Window
     }
 
     private void ExpandVkBrowser_Click(object sender, RoutedEventArgs e) => ShowVkVideoWindow();
+
+    private async void ResetVkSession_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_vkBrowserReady) return;
+        var confirm = MessageBox.Show(this,
+            "Очистить cookies и данные только встроенного браузера VK Видео? Потребуется войти заново. Обычный браузер и файлы пакетов не затрагиваются.",
+            "Сбросить вход VK", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        ResetVkSessionButton.IsEnabled = false;
+        VkStreamsStatusText.Text = "Очищаю устаревшую сессию VK Видео…";
+        try
+        {
+            await VkVideoBrowser.CoreWebView2.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllSite);
+            VkVideoBrowser.CoreWebView2.Navigate("https://vkvideo.ru/");
+            VkStreamsStatusText.Text = "Сессия очищена. Войди заново в VK Видео.";
+        }
+        catch (Exception ex)
+        {
+            VkStreamsStatusText.Text = "Не удалось очистить сессию VK.";
+            MessageBox.Show(this, ex.Message, "Сброс входа VK", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally { ResetVkSessionButton.IsEnabled = true; }
+    }
 
     private void ShowVkVideoWindow()
     {

@@ -284,6 +284,7 @@
                                 <DockPanel Grid.Row="2" Margin="0,0,0,9">
                                     <Button x:Name="ConnectVkButton" Content="Открыть VK Видео" Click="OpenVkVideo_Click" Margin="0,0,8,0" />
                                     <Button x:Name="ExpandVkBrowserButton" Content="Развернуть окно VK" Click="ExpandVkBrowser_Click" Margin="0,0,8,0" IsEnabled="False" />
+                                    <Button x:Name="ResetVkSessionButton" Content="Сбросить вход VK" Click="ResetVkSession_Click" Margin="0,0,8,0" IsEnabled="False" ToolTip="Очистить только cookies и данные встроенного браузера VK Видео" />
                                     <Button x:Name="PrepareVkStreamButton" Content="Подготовить выбранную игру" Click="FillStreamForm_Click" IsEnabled="False" Margin="0,0,8,0" />
                                     <Button x:Name="CreateVkStreamButton" Content="Создать эфир в VK" Style="{StaticResource PrimaryButton}" Click="CreateVkStream_Click" IsEnabled="False" />
                                 </DockPanel>
