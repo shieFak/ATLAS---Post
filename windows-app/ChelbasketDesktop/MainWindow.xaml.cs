@@ -4,6 +4,7 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Web;
 using System.Windows;
 using System.Windows.Controls;
@@ -24,6 +25,9 @@ public partial class MainWindow : Window
     private WebView2? _vkVideoBrowser;
     private Window? _vkVideoWindow;
     private string? _pendingVkGameId;
+    private string? _preparedVkGameId;
+    private string? _preparedVkGroupId;
+    private bool _streamCreationSubmitted;
     private bool _editingAutoFields;
     private bool _userEditedIntro;
     private bool _userEditedHashtags;
@@ -32,6 +36,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        var vkTarget = LoadVkTargetSettings();
+        VkGroupIdBox.Text = vkTarget.GroupId;
+        VkChannelNameBox.Text = vkTarget.ChannelName;
         _windowInitialized = true;
     }
 
@@ -126,7 +133,11 @@ public partial class MainWindow : Window
                 HallFilterCombo.Items.Add(new ComboBoxItem { Content = hall });
             HallFilterCombo.SelectedIndex = 0;
             CreatePackageButton.IsEnabled = _games.Count > 0;
-            CreateStreamsButton.IsEnabled = _games.Count > 0;
+            _preparedVkGameId = null;
+            _preparedVkGroupId = null;
+            _pendingVkGameId = null;
+            _streamCreationSubmitted = false;
+            RefreshVkActionButtons();
             CopyPostButton.IsEnabled = _games.Count > 0;
             SummaryText.Text = _games.Count == 0
                 ? "На эту дату игры не найдены."
@@ -561,10 +572,12 @@ public partial class MainWindow : Window
         IntroBox.IsEnabled = !value;
         VenueBox.IsEnabled = !value;
         HashtagsBox.IsEnabled = !value;
+        VkGroupIdBox.IsEnabled = !value;
+        VkChannelNameBox.IsEnabled = !value;
         ConnectVkButton.IsEnabled = !value;
         CopyPostButton.IsEnabled = !value && _games.Count > 0;
         CreatePackageButton.IsEnabled = !value && _games.Count > 0;
-        CreateStreamsButton.IsEnabled = !value && _games.Count > 0;
+        RefreshVkActionButtons(value);
     }
 
     private void HallFilter_Changed(object sender, SelectionChangedEventArgs e)
@@ -589,7 +602,44 @@ public partial class MainWindow : Window
             Status = _createdStreamLinks.ContainsKey(game.Id) ? "Создан" : "Ожидает"
         }).ToList();
         VkStreamsGrid.ItemsSource = _vkStreamRows;
-        CreateStreamsButton.IsEnabled = _games.Count > 0;
+        _preparedVkGameId = null;
+        _preparedVkGroupId = null;
+        _pendingVkGameId = null;
+        _streamCreationSubmitted = false;
+        RefreshVkActionButtons();
+    }
+
+    private void VkStreamsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (VkStreamsGrid.SelectedItem is VkStreamRow row && _preparedVkGameId != row.Game.Id)
+        {
+            _preparedVkGameId = null;
+            _preparedVkGroupId = null;
+            _pendingVkGameId = null;
+            _streamCreationSubmitted = false;
+        }
+        RefreshVkActionButtons();
+    }
+
+    private void VkTarget_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (!_windowInitialized) return;
+        _preparedVkGameId = null;
+        _preparedVkGroupId = null;
+        _pendingVkGameId = null;
+        _streamCreationSubmitted = false;
+        SaveVkTargetSettings();
+        RefreshVkActionButtons();
+    }
+
+    private void RefreshVkActionButtons(bool busy = false)
+    {
+        if (!_windowInitialized || PrepareVkStreamButton is null) return;
+        var row = VkStreamsGrid.SelectedItem as VkStreamRow;
+        var alreadyCreated = row is not null && _createdStreamLinks.ContainsKey(row.Game.Id);
+        PrepareVkStreamButton.IsEnabled = !busy && _vkBrowserReady && row is not null && !alreadyCreated;
+        CreateVkStreamButton.IsEnabled = !busy && !_streamCreationSubmitted && row is not null &&
+            row.Game.Id == _preparedVkGameId && !alreadyCreated;
     }
 
     private async Task EnsureVkVideoBrowserAsync()
@@ -606,8 +656,21 @@ public partial class MainWindow : Window
         _vkVideoBrowser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
         _vkVideoBrowser.CoreWebView2.Settings.IsStatusBarEnabled = true;
         _vkVideoBrowser.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        _vkVideoBrowser.CoreWebView2.NewWindowRequested += (_, args) =>
+        {
+            if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var popupUri) &&
+                (popupUri.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
+                 popupUri.Host.Equals("live.vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
+                 popupUri.Host.Equals("vk.ru", StringComparison.OrdinalIgnoreCase) ||
+                 popupUri.Host.Equals("vk.com", StringComparison.OrdinalIgnoreCase)))
+            {
+                args.Handled = true;
+                _vkVideoBrowser.CoreWebView2.Navigate(popupUri.AbsoluteUri);
+            }
+        };
         _vkBrowserReady = true;
         ExpandVkBrowserButton.IsEnabled = true;
+        RefreshVkActionButtons();
     }
 
     private WebView2 VkVideoBrowser => _vkVideoBrowser ?? throw new InvalidOperationException("Браузер VK ещё не открыт.");
@@ -620,10 +683,14 @@ public partial class MainWindow : Window
         {
             await EnsureVkVideoBrowserAsync();
             if (!Uri.TryCreate(VkVideoBrowser.Source?.AbsoluteUri, UriKind.Absolute, out var current) ||
-                !(current.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) || current.Host.Equals("vk.ru", StringComparison.OrdinalIgnoreCase)))
+                !(current.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
+                  current.Host.Equals("live.vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
+                  current.Host.Equals("vk.ru", StringComparison.OrdinalIgnoreCase) ||
+                  current.Host.Equals("vk.com", StringComparison.OrdinalIgnoreCase)))
                 VkVideoBrowser.CoreWebView2.Navigate("https://vkvideo.ru/");
             ShowVkVideoWindow();
             VkStreamsStatusText.Text = "Войди в VK в отдельном окне. Сессию можно будет использовать и дальше.";
+            RefreshVkActionButtons();
         }
         catch (Exception ex)
         {
@@ -712,7 +779,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "Сначала выбери игру в таблице.", "Выбери игру", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (string.IsNullOrWhiteSpace(_vkVideoBrowser?.Source?.AbsoluteUri))
+        if (!_vkBrowserReady || string.IsNullOrWhiteSpace(_vkVideoBrowser?.Source?.AbsoluteUri))
         {
             MessageBox.Show(this, "Сначала открой VK Видео и перейди к форме создания эфира.", "VK Видео не открыто", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -723,9 +790,24 @@ public partial class MainWindow : Window
             return;
         }
 
+        var groupId = Regex.Replace(VkGroupIdBox.Text, @"\D", string.Empty);
+        var channelName = VkChannelNameBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(groupId) || string.IsNullOrWhiteSpace(channelName))
+        {
+            MessageBox.Show(this, "Укажи ID сообщества и название его канала в VK Видео.", "Не задан канал VK", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         SetBusy(true);
         try
         {
+            var targetChannel = await EnsureVkTargetChannelAsync(groupId, channelName);
+            if (!targetChannel.Success)
+            {
+                VkStreamsStatusText.Text = targetChannel.Message;
+                return;
+            }
+
             var titleJson = JsonSerializer.Serialize(row.Title);
             var script = "(() => {" +
                 "const visible=e=>!!(e&&e.getClientRects().length);" +
@@ -733,31 +815,38 @@ public partial class MainWindow : Window
                 "const meta=e=>[(e.getAttribute('placeholder')||''),(e.getAttribute('aria-label')||''),(e.getAttribute('name')||''),(e.labels?[...e.labels].map(x=>x.innerText).join(' '):''),(e.parentElement?.innerText||'')].join(' ').toLowerCase();" +
                 "const title=nodes.find(e=>/(назван|смотрю фильмы|название эфира)/i.test(meta(e)));" +
                 "const desc=nodes.find(e=>/(расскажите, о чём|описание)/i.test(meta(e)));" +
-                "if(!title)return {ok:false,message:'Не вижу поле названия. Открой на VK первый шаг формы создания трансляции.'};" +
-                "const set=(e,v)=>{const p=e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const d=Object.getOwnPropertyDescriptor(p,'value');if(d?.set)d.set.call(e,v);else e.textContent=v;e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));e.dispatchEvent(new Event('change',{bubbles:true}));};" +
-                "if(!desc)return {ok:false,message:'Не вижу поле описания. Открой первый шаг формы эфира — описание останется пустым.'};" +
+                "if(!title)return {ok:false,message:'Не вижу поле названия. Открой первый шаг формы создания трансляции.'};" +
+                "if(!desc)return {ok:false,message:'Не вижу поле описания на первом шаге формы.'};" +
+                "const set=(e,v)=>{if(e instanceof HTMLInputElement||e instanceof HTMLTextAreaElement){const p=e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const d=Object.getOwnPropertyDescriptor(p,'value');if(d?.set)d.set.call(e,v);else e.value=v;}else e.textContent=v;e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));e.dispatchEvent(new Event('change',{bubbles:true}));};" +
                 $"set(title,{titleJson});" +
                 "set(desc,'');" +
-                "const sport=[...document.querySelectorAll('button,[role=button]')].find(e=>visible(e)&&e.innerText.trim()==='Спорт');if(sport)sport.click();" +
-                "const next=[...document.querySelectorAll('button,[role=button]')].find(e=>visible(e)&&e.innerText.trim()==='Далее');if(next)next.click();" +
-                "return {ok:true,descriptionCleared:true,sportSelected:!!sport,nextClicked:!!next};" +
+                "const sport=[...document.querySelectorAll('button,[role=button]')].find(e=>visible(e)&&e.innerText.trim()==='Спорт');if(!sport)return {ok:false,message:'Не вижу категорию «Спорт». Выбери её вручную и повтори подготовку.'};sport.click();" +
+                "const next=[...document.querySelectorAll('button,[role=button]')].find(e=>visible(e)&&e.innerText.trim()==='Далее');if(!next)return {ok:false,message:'Не вижу кнопку «Далее». Проверь первый шаг формы VK.'};next.click();" +
+                "return {ok:true,descriptionCleared:true,sportSelected:true,nextClicked:true};" +
                 "})()";
-            var raw = await VkVideoBrowser.CoreWebView2.ExecuteScriptAsync(script);
-            using var result = JsonDocument.Parse(raw);
-            var root = result.RootElement;
-            if (!root.GetProperty("ok").GetBoolean())
+            var result = await ExecuteVkScriptAsync(script);
+            if (!result.GetProperty("ok").GetBoolean())
             {
-                VkStreamsStatusText.Text = root.GetProperty("message").GetString() ?? "Открой форму создания трансляции.";
+                VkStreamsStatusText.Text = result.GetProperty("message").GetString() ?? "Открой форму создания трансляции.";
                 return;
             }
 
             _pendingVkGameId = row.Game.Id;
-            row.Status = "Форма заполнена — проверь и создай в VK";
+            _preparedVkGameId = row.Game.Id;
+            _preparedVkGroupId = groupId;
+            _streamCreationSubmitted = false;
+            row.Status = "Форма заполнена — готово к созданию";
             VkStreamsGrid.Items.Refresh();
-            var sportText = root.GetProperty("sportSelected").GetBoolean() ? "Категория «Спорт» выбрана." : "Выбери категорию «Спорт» вручную.";
-            VkStreamsStatusText.Text = root.GetProperty("nextClicked").GetBoolean()
-                ? $"Название заполнено, описание пустое. {sportText} Проверь настройки на странице VK и создай эфир вручную."
-                : $"Название заполнено, описание пустое. {sportText} Перейди дальше вручную и проверь параметры перед созданием.";
+            var ready = await WaitForVkCreateButtonAsync(TimeSpan.FromSeconds(15));
+            if (!ready)
+            {
+                row.Status = "Проверь настройки VK вручную";
+                VkStreamsStatusText.Text = "Название заполнено, описание очищено, выбрана категория «Спорт». Перейди на вкладку «Настройки» в VK; затем нажми «Создать эфир в VK» в приложении.";
+            }
+            else
+            {
+                VkStreamsStatusText.Text = $"Канал «{channelName}» выбран. Название заполнено, описание пустое, категория «Спорт». Проверь настройки и нажми «Создать эфир в VK».";
+            }
         }
         catch (Exception ex)
         {
@@ -765,6 +854,233 @@ public partial class MainWindow : Window
             MessageBox.Show(this, ex.Message, "Заполнение формы", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally { SetBusy(false); }
+    }
+
+    private async void CreateVkStream_Click(object sender, RoutedEventArgs e)
+    {
+        if (VkStreamsGrid.SelectedItem is not VkStreamRow row || row.Game.Id != _preparedVkGameId || _pendingVkGameId != row.Game.Id)
+        {
+            MessageBox.Show(this, "Сначала подготовь эфир для выбранной игры.", "Эфир не подготовлен", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (!string.Equals(_preparedVkGroupId, Regex.Replace(VkGroupIdBox.Text, @"\D", string.Empty), StringComparison.Ordinal))
+        {
+            MessageBox.Show(this, "ID сообщества изменился. Подготовь форму заново, чтобы приложение проверило выбранный канал.", "Проверь сообщество", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (_createdStreamLinks.ContainsKey(row.Game.Id) || _streamCreationSubmitted) return;
+
+        var confirm = MessageBox.Show(this,
+            $"Создать эфир в сообществе «{VkChannelNameBox.Text.Trim()}» (ID {VkGroupIdBox.Text.Trim()})?\n\n{row.Title}\n\nОписание останется пустым. После создания приложение попробует само сохранить ссылку в пост.",
+            "Подтверди создание эфира", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        SetBusy(true);
+        try
+        {
+            var existingLinks = await GetVisibleStreamLinksAsync();
+            var createScript = "(() => {" +
+                "const visible=e=>!!(e&&e.getClientRects().length);" +
+                "const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();" +
+                "const buttons=[...document.querySelectorAll('button,[role=button]')].filter(visible);" +
+                "const create=buttons.find(e=>/^(создать трансляцию|создать эфир)$/.test(norm(e.innerText)));" +
+                "if(!create)return {ok:false,message:'На странице VK не вижу кнопку «Создать трансляцию». Открой вкладку «Настройки» и повтори.'};" +
+                "create.click();return {ok:true};" +
+                "})()";
+            _streamCreationSubmitted = true;
+            var result = await ExecuteVkScriptAsync(createScript);
+            if (!result.GetProperty("ok").GetBoolean())
+            {
+                _streamCreationSubmitted = false;
+                VkStreamsStatusText.Text = result.GetProperty("message").GetString() ?? "Не удалось начать создание эфира.";
+                return;
+            }
+
+            row.Status = "VK создаёт эфир…";
+            VkStreamsGrid.Items.Refresh();
+            RefreshVkActionButtons(busy: true);
+            VkStreamsStatusText.Text = "Запрос отправлен в VK. Жду ссылку на созданный эфир…";
+
+            var link = await WaitForCreatedStreamLinkAsync(existingLinks, TimeSpan.FromSeconds(60));
+            if (link is not null)
+            {
+                SaveStreamLink(row.Game.Id, link);
+                return;
+            }
+
+            row.Status = "Эфир отправлен — вставь ссылку вручную";
+            VkStreamsGrid.Items.Refresh();
+            VkStreamsStatusText.Text = "VK не показал ссылку в адресе страницы. Скопируй ссылку на эфир из VK, вставь её в поле ниже и нажми «Сохранить ссылку вручную». Создание не запускай повторно.";
+        }
+        catch (Exception ex)
+        {
+            VkStreamsStatusText.Text = _streamCreationSubmitted
+                ? "VK мог принять запрос. Проверь список эфиров, прежде чем нажимать создание повторно."
+                : "Не удалось создать эфир через VK Видео.";
+            MessageBox.Show(this,
+                _streamCreationSubmitted
+                    ? $"После отправки команды VK вернул ошибку. Чтобы не создать дубликат, проверь VK Видео и не запускай создание повторно, пока не убедишься, что эфир не появился.\n\n{ex.Message}"
+                    : ex.Message,
+                "Создание эфира", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally { SetBusy(false); }
+    }
+
+    private async Task<(bool Success, string Message)> EnsureVkTargetChannelAsync(string groupId, string channelName)
+    {
+        var state = await ExecuteVkScriptAsync(VkChannelStateScript());
+        if (!state.GetProperty("found").GetBoolean())
+            return (false, "Открой в VK Видео первый шаг формы создания трансляции. В нём должен быть указан канал.");
+
+        var currentText = state.GetProperty("text").GetString() ?? string.Empty;
+        var currentMarkup = state.GetProperty("html").GetString() ?? string.Empty;
+        if (IsVkTargetSelected(currentText, currentMarkup, groupId, channelName))
+            return (true, currentText);
+
+        await ExecuteVkScriptAsync(VkClickChannelDropdownScript());
+        await Task.Delay(350);
+        var idJson = JsonSerializer.Serialize(groupId);
+        var nameJson = JsonSerializer.Serialize(channelName);
+        var selectScript = "(() => {" +
+            "const visible=e=>!!(e&&e.getClientRects().length);" +
+            "const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();" +
+            $"const id={idJson},name=norm({nameJson});" +
+            "const items=[...document.querySelectorAll('a[href],[role=option],[role=menuitem],button,[role=button]')].filter(visible);" +
+            "const byId=items.find(e=>((e.getAttribute('href')||'')+' '+e.outerHTML).toLowerCase().includes('club'+id));" +
+            "const byName=items.find(e=>{const t=norm(e.innerText);return t===name||t.startsWith(name+' ')||t.startsWith(name+'\\n')});" +
+            "const target=byId||byName;if(!target)return {ok:false,message:'В списке VK не нашёл этот канал. Выбери его вручную и снова нажми «Подготовить выбранную игру».',text:''};" +
+            "target.click();return {ok:true,message:'Канал выбран.',text:target.innerText||''};" +
+            "})()";
+        var selection = await ExecuteVkScriptAsync(selectScript);
+        if (!selection.GetProperty("ok").GetBoolean())
+            return (false, selection.GetProperty("message").GetString() ?? "Не удалось выбрать канал VK.");
+
+        await Task.Delay(450);
+        state = await ExecuteVkScriptAsync(VkChannelStateScript());
+        currentText = state.TryGetProperty("text", out var textValue) ? textValue.GetString() ?? string.Empty : string.Empty;
+        currentMarkup = state.TryGetProperty("html", out var htmlValue) ? htmlValue.GetString() ?? string.Empty : string.Empty;
+        return IsVkTargetSelected(currentText, currentMarkup, groupId, channelName)
+            ? (true, currentText)
+            : (false, $"Не получилось подтвердить выбранный канал. Проверь, что в форме VK выбрано «{channelName}» (ID {groupId}).");
+    }
+
+    private static bool IsVkTargetSelected(string currentText, string markup, string groupId, string channelName) =>
+        markup.Contains($"club{groupId}", StringComparison.OrdinalIgnoreCase) ||
+        markup.Contains($"club-{groupId}", StringComparison.OrdinalIgnoreCase) ||
+        (!string.IsNullOrWhiteSpace(channelName) && currentText.Contains(channelName, StringComparison.CurrentCultureIgnoreCase));
+
+    private static string VkChannelStateScript() => "(() => {" +
+        "const visible=e=>!!(e&&e.getClientRects().length);" +
+        "const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();" +
+        "const label=[...document.querySelectorAll('body *')].find(e=>e.children.length===0&&norm(e.innerText||e.textContent)==='канал');" +
+        "if(!label)return {found:false,text:'',html:''};" +
+        "let p=label;for(let i=0;i<5&&p;i++,p=p.parentElement){const c=[...p.querySelectorAll('button,[role=combobox],[aria-haspopup],input')].find(visible);if(c)return {found:true,text:c.innerText||c.value||'',html:c.outerHTML||''};}" +
+        "return {found:false,text:'',html:''};" +
+        "})()";
+
+    private static string VkClickChannelDropdownScript() => "(() => {" +
+        "const visible=e=>!!(e&&e.getClientRects().length);" +
+        "const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();" +
+        "const label=[...document.querySelectorAll('body *')].find(e=>e.children.length===0&&norm(e.innerText||e.textContent)==='канал');" +
+        "if(!label)return {ok:false};let p=label;for(let i=0;i<5&&p;i++,p=p.parentElement){const c=[...p.querySelectorAll('button,[role=combobox],[aria-haspopup],input')].find(visible);if(c){c.click();return {ok:true};}}return {ok:false};" +
+        "})()";
+
+    private async Task<bool> WaitForVkCreateButtonAsync(TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        const string script = "(() => [...document.querySelectorAll('button,[role=button]')].some(e=>e.getClientRects().length&&/^(создать трансляцию|создать эфир)$/i.test((e.innerText||'').replace(/\\s+/g,' ').trim())))()";
+        while (DateTime.UtcNow < until)
+        {
+            var result = await ExecuteVkScriptAsync(script);
+            if (result.ValueKind == JsonValueKind.True) return true;
+            await Task.Delay(500);
+        }
+        return false;
+    }
+
+    private async Task<HashSet<string>> GetVisibleStreamLinksAsync()
+    {
+        const string script = "(() => {const values=[location.href,...[...document.querySelectorAll('a[href]')].map(a=>a.href),...[...document.querySelectorAll('input,textarea,[contenteditable=true]')].map(e=>e.value||e.innerText||e.textContent),...(document.body?.innerText||'').match(/https?:\\/\\/(?:live\\.)?(?:vkvideo\\.ru|vk\\.ru|vk\\.com)\\/live-[\\w-]+/gi)||[])];return values.filter(Boolean);})()";
+        try
+        {
+            var result = await ExecuteVkScriptAsync(script);
+            if (result.ValueKind == JsonValueKind.Array)
+                return result.EnumerateArray()
+                    .Select(value => value.GetString())
+                    .Where(value => TryNormalizeVkStreamLink(value, out _))
+                    .Select(value => { TryNormalizeVkStreamLink(value, out var link); return link; })
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch { }
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<string?> WaitForCreatedStreamLinkAsync(HashSet<string> existingLinks, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        const string script = "(() => {const values=[location.href,...[...document.querySelectorAll('a[href]')].map(a=>a.href),...[...document.querySelectorAll('input,textarea,[contenteditable=true]')].map(e=>e.value||e.innerText||e.textContent),...(document.body?.innerText||'').match(/https?:\\/\\/(?:live\\.)?(?:vkvideo\\.ru|vk\\.ru|vk\\.com)\\/live-[\\w-]+/gi)||[])];return values.filter(Boolean);})()";
+        while (DateTime.UtcNow < until)
+        {
+            var source = _vkVideoBrowser?.Source?.AbsoluteUri;
+            if (TryNormalizeVkStreamLink(source, out var normalized) && !existingLinks.Contains(normalized)) return normalized;
+            try
+            {
+                var values = await ExecuteVkScriptAsync(script);
+                if (values.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var value in values.EnumerateArray())
+                        if (TryNormalizeVkStreamLink(value.GetString(), out normalized) && !existingLinks.Contains(normalized)) return normalized;
+                }
+            }
+            catch { /* VK can navigate while publishing the newly created stream. */ }
+            await Task.Delay(1000);
+        }
+        return null;
+    }
+
+    private async Task<JsonElement> ExecuteVkScriptAsync(string script)
+    {
+        var raw = await VkVideoBrowser.CoreWebView2.ExecuteScriptAsync(script);
+        using var result = JsonDocument.Parse(raw);
+        return result.RootElement.Clone();
+    }
+
+    private static bool TryNormalizeVkStreamLink(string? value, out string normalized)
+    {
+        normalized = string.Empty;
+        if (!Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri) ||
+            !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !(uri.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
+              uri.Host.Equals("live.vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
+              uri.Host.Equals("vk.ru", StringComparison.OrdinalIgnoreCase) ||
+              uri.Host.Equals("vk.com", StringComparison.OrdinalIgnoreCase)) ||
+            !uri.AbsolutePath.StartsWith("/live-", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var builder = new UriBuilder(uri) { Query = string.Empty, Fragment = string.Empty };
+        if (builder.Host.Equals("live.vkvideo.ru", StringComparison.OrdinalIgnoreCase)) builder.Host = "vkvideo.ru";
+        return PostBuilder.TryExpandStreamLink(builder.Uri.AbsoluteUri, 0, out normalized);
+    }
+
+    private void SaveStreamLink(string gameId, string link)
+    {
+        _createdStreamLinks[gameId] = link;
+        PersistCreatedStreamLinks();
+        var row = _vkStreamRows.FirstOrDefault(item => item.Game.Id == gameId);
+        if (row is not null)
+        {
+            row.Link = link;
+            row.Status = "Создан · ссылка сохранена";
+            VkStreamsGrid.Items.Refresh();
+        }
+        VkCurrentLinkBox.Clear();
+        _pendingVkGameId = null;
+        _preparedVkGameId = null;
+        _preparedVkGroupId = null;
+        _streamCreationSubmitted = false;
+        UpdatePostPreview();
+        VkStreamsStatusText.Text = "Эфир создан, ссылка сохранена в пост и пакет. Можно переходить к следующей игре.";
+        RefreshVkActionButtons();
     }
 
     private void SaveCurrentStreamLink_Click(object sender, RoutedEventArgs e)
@@ -778,28 +1094,41 @@ public partial class MainWindow : Window
         var value = string.IsNullOrWhiteSpace(VkCurrentLinkBox.Text)
             ? _vkVideoBrowser?.Source?.AbsoluteUri
             : VkCurrentLinkBox.Text.Trim();
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var link) ||
-            !(link.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) || link.Host.Equals("vk.ru", StringComparison.OrdinalIgnoreCase)) ||
-            !link.AbsolutePath.StartsWith("/live", StringComparison.OrdinalIgnoreCase))
+        if (!TryNormalizeVkStreamLink(value, out var link))
         {
-            MessageBox.Show(this, "Вставь ссылку на созданный эфир вида https://vkvideo.ru/live-... или открой страницу эфира во встроенном браузере.",
+            MessageBox.Show(this, "Вставь ссылку на созданный эфир вида https://vkvideo.ru/live-... .",
                 "Ссылка на эфир не найдена", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        _createdStreamLinks[_pendingVkGameId] = link.AbsoluteUri;
-        PersistCreatedStreamLinks();
-        var row = _vkStreamRows.FirstOrDefault(item => item.Game.Id == _pendingVkGameId);
-        if (row is not null)
+        SaveStreamLink(_pendingVkGameId, link);
+    }
+
+    private sealed record VkTargetSettings(string GroupId, string ChannelName);
+
+    private static string VkTargetSettingsPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChelbasketTV", "vk-target.json");
+
+    private static VkTargetSettings LoadVkTargetSettings()
+    {
+        try
         {
-            row.Link = link.AbsoluteUri;
-            row.Status = "Ссылка сохранена";
-            VkStreamsGrid.Items.Refresh();
+            return File.Exists(VkTargetSettingsPath)
+                ? JsonSerializer.Deserialize<VkTargetSettings>(File.ReadAllText(VkTargetSettingsPath)) ?? new("216863675", "Проба")
+                : new("216863675", "Проба");
         }
-        VkCurrentLinkBox.Clear();
-        _pendingVkGameId = null;
-        UpdatePostPreview();
-        VkStreamsStatusText.Text = "Ссылка сохранена в пост и файл пакета. Выбери следующую игру.";
+        catch { return new("216863675", "Проба"); }
+    }
+
+    private void SaveVkTargetSettings()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(VkTargetSettingsPath)!);
+            File.WriteAllText(VkTargetSettingsPath, JsonSerializer.Serialize(new VkTargetSettings(
+                Regex.Replace(VkGroupIdBox.Text, @"\D", string.Empty), VkChannelNameBox.Text.Trim())));
+        }
+        catch { }
     }
 
     private static string StreamLinksPath => Path.Combine(

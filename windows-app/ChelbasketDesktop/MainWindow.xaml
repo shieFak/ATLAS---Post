@@ -260,26 +260,37 @@
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <Border Background="#F4F8FB" CornerRadius="10" Padding="14" Margin="0,0,0,10">
+                                <Border Grid.Row="0" Background="#F4F8FB" CornerRadius="10" Padding="14" Margin="0,0,0,10">
                                     <StackPanel>
-                                        <TextBlock Text="Подготовка эфиров в VK Видео" Foreground="#102A43" FontSize="16" FontWeight="Bold" />
-                                        <TextBlock Text="VK Видео открывается в отдельном большом окне. Выбери игру в таблице, чтобы заполнить название по games.txt; описание останется пустым. Проверь настройки и сам нажми «Создать трансляцию» в VK." Foreground="#77899B" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0" />
+                                        <TextBlock Text="Создание эфиров в VK Видео" Foreground="#102A43" FontSize="16" FontWeight="Bold" />
+                                        <TextBlock Text="Выбери сообщество и игру. Приложение заполнит форму, создаст эфир после твоего подтверждения и сохранит ссылку в пост." Foreground="#77899B" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0" />
                                     </StackPanel>
                                 </Border>
-                                <DockPanel Grid.Row="1" Margin="0,0,0,9">
-                                    <TextBlock Text="Открой группу и форму создания эфира" VerticalAlignment="Center" Foreground="#52677A" Margin="0,0,12,0" />
+                                <Border Grid.Row="1" Background="#F8FAFC" CornerRadius="8" Padding="10" Margin="0,0,0,9">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="160"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="ID сообщества" VerticalAlignment="Center" Foreground="#52677A" Margin="0,0,8,0" />
+                                        <TextBox x:Name="VkGroupIdBox" Grid.Column="1" Text="216863675" VerticalContentAlignment="Center" Margin="0,0,16,0" ToolTip="Например, 216863675 или club216863675" TextChanged="VkTarget_Changed" />
+                                        <TextBlock Grid.Column="2" Text="Название канала" VerticalAlignment="Center" Foreground="#52677A" Margin="0,0,8,0" />
+                                        <TextBox x:Name="VkChannelNameBox" Grid.Column="3" Text="Проба" VerticalContentAlignment="Center" Margin="0,0,16,0" ToolTip="Название, отображаемое в VK Видео" TextChanged="VkTarget_Changed" />
+                                        <TextBlock Grid.Column="4" Text="При первом запуске войди в VK. Сессия хранится отдельно от обычного браузера." VerticalAlignment="Center" Foreground="#77899B" FontSize="10" TextWrapping="Wrap" />
+                                    </Grid>
+                                </Border>
+                                <DockPanel Grid.Row="2" Margin="0,0,0,9">
                                     <Button x:Name="ConnectVkButton" Content="Открыть VK Видео" Click="OpenVkVideo_Click" Margin="0,0,8,0" />
                                     <Button x:Name="ExpandVkBrowserButton" Content="Развернуть окно VK" Click="ExpandVkBrowser_Click" Margin="0,0,8,0" IsEnabled="False" />
-                                    <Button x:Name="CreateStreamsButton" Content="Заполнить эфир для выбранной игры" Style="{StaticResource PrimaryButton}" Click="FillStreamForm_Click" IsEnabled="False" />
+                                    <Button x:Name="PrepareVkStreamButton" Content="Подготовить выбранную игру" Click="FillStreamForm_Click" IsEnabled="False" Margin="0,0,8,0" />
+                                    <Button x:Name="CreateVkStreamButton" Content="Создать эфир в VK" Style="{StaticResource PrimaryButton}" Click="CreateVkStream_Click" IsEnabled="False" />
                                 </DockPanel>
-                                <Grid Grid.Row="2">
+                                <Grid Grid.Row="3">
                                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                                     <TextBlock x:Name="VkStreamsStatusText" Text="Подключи VK и найди игры, чтобы подготовить эфиры." Foreground="#77899B" FontSize="11" Margin="2,0,0,8" TextWrapping="Wrap" />
-                                    <DataGrid x:Name="VkStreamsGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" CanUserSortColumns="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" BorderThickness="0" RowHeaderWidth="0" Background="White" HorizontalGridLinesBrush="#EEF2F5" SelectionMode="Single" AlternationCount="2">
+                                    <DataGrid x:Name="VkStreamsGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" CanUserSortColumns="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" BorderThickness="0" RowHeaderWidth="0" Background="White" HorizontalGridLinesBrush="#EEF2F5" SelectionMode="Single" AlternationCount="2" SelectionChanged="VkStreamsGrid_SelectionChanged">
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="#" Binding="{Binding Game.Number, StringFormat={}{0:00}}" Width="52" />
                                             <DataGridTextColumn Header="ВРЕМЯ" Binding="{Binding Game.Time}" Width="72" />
@@ -289,11 +300,11 @@
                                         </DataGrid.Columns>
                                     </DataGrid>
                                 </Grid>
-                                <DockPanel Grid.Row="3" Margin="0,8,0,0">
-                                    <Button Content="Сохранить ссылку текущей игры" Click="SaveCurrentStreamLink_Click" Margin="0,0,8,0" />
-                                    <TextBox x:Name="VkCurrentLinkBox" ToolTip="Если VK не открыл страницу эфира автоматически, вставь сюда ссылку после создания" VerticalContentAlignment="Center" />
+                                <DockPanel Grid.Row="4" Margin="0,8,0,0">
+                                    <Button Content="Сохранить ссылку вручную" Click="SaveCurrentStreamLink_Click" Margin="0,0,8,0" />
+                                    <TextBox x:Name="VkCurrentLinkBox" ToolTip="Резервный вариант: вставь сюда ссылку, если VK не отдал её странице эфира" VerticalContentAlignment="Center" />
                                 </DockPanel>
-                                <ContentControl x:Name="VkVideoBrowserHost" Grid.Row="4" Height="180" Visibility="Collapsed" />
+                                <ContentControl x:Name="VkVideoBrowserHost" Grid.Row="5" Height="180" Visibility="Collapsed" />
                             </Grid>
                         </TabItem>
                         <TabItem x:Name="BrowserTab" Header="Страница экспорта"><wv2:WebView2 x:Name="CoverBrowser" DefaultBackgroundColor="#FFFFFF" /></TabItem>
