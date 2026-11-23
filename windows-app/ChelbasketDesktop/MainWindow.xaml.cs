@@ -647,6 +647,9 @@ public partial class MainWindow : Window
         if (_vkBrowserReady) return;
         var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChelbasketTV", "VkVideoBrowser");
         Directory.CreateDirectory(userData);
+        // WebView2 may never finish EnsureCoreWebView2Async while its visual parent is collapsed.
+        // Make the host visible for initialization; ShowVkVideoWindow moves it immediately after.
+        VkVideoBrowserHost.Visibility = Visibility.Visible;
         await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded);
         var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
         _vkVideoBrowser = new WebView2 { Visibility = Visibility.Visible };
