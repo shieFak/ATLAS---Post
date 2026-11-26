@@ -48,8 +48,8 @@ jobs:
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ChelbasketDesktop-win-x64
-          path: artifacts/ChelbasketDesktop.exe
+          name: Atlas-win-x64
+          path: artifacts/Atlas.exe
           if-no-files-found: error
           retention-days: 90
 
@@ -57,4 +57,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/app-v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$env:GITHUB_REF_NAME" artifacts/ChelbasketDesktop.exe --title "Челбаскет ТВ-пакет $env:APP_VERSION" --generate-notes
+        run: gh release create "$env:GITHUB_REF_NAME" artifacts/Atlas.exe --title "Атлас $env:APP_VERSION" --generate-notes

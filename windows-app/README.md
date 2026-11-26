@@ -1,6 +1,6 @@
 # Windows-приложение
 
-`ChelbasketDesktop` — portable WPF-приложение для Windows x64. Оно повторяет рабочий процесс плагина «Челбаскет ТВ-обложки»:
+`Атлас` — portable WPF-приложение для Windows x64. Оно повторяет рабочий процесс плагина «Челбаскет ТВ-обложки»:
 
 1. Загружает список турниров с сайта Федерации баскетбола Челябинской области.
 2. Находит игры выбранной даты, включая прошедшие и предстоящие матчи.
@@ -14,7 +14,7 @@
 
 ## Скачать готовый EXE
 
-После отправки изменений в ветку `main` GitHub Actions собирает `ChelbasketDesktop.exe`. Открой раздел **Actions**, выбери последний успешный запуск `Windows app`, затем скачай артефакт `ChelbasketDesktop-win-x64`.
+После отправки изменений в ветку `main` GitHub Actions собирает `Atlas.exe`. Открой раздел **Actions**, выбери последний успешный запуск `Windows app`, затем скачай артефакт `Atlas-win-x64`.
 
 Приложению нужен Microsoft Edge WebView2 Runtime для отображения и экспорта обложек. Он уже установлен на большинстве Windows 10/11 компьютеров. Если его нет, установи Evergreen Runtime с [официальной страницы Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/).
 
@@ -37,7 +37,7 @@ GitHub Actions соберёт EXE и опубликует релиз. Прило
 .\windows-app\publish.ps1
 ```
 
-Portable-файл появится в `windows-app/publish/ChelbasketDesktop.exe`. Для работы ему нужен WebView2 Runtime; сам .NET включён в EXE.
+Portable-файл появится в `windows-app/publish/Atlas.exe`. Для работы ему нужен WebView2 Runtime; сам .NET включён в EXE.
 
 ## Структура
 

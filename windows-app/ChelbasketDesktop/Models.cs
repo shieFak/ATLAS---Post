@@ -1,6 +1,13 @@
 namespace ChelbasketDesktop;
 
-public sealed record TournamentInfo(string Name, string Url);
+public enum TournamentSource { Chelbasket, Asb }
+
+public sealed record TournamentInfo(
+    string Name,
+    string Url,
+    TournamentSource Source = TournamentSource.Chelbasket,
+    bool IsAsbSpo = false,
+    string BroadcastGender = "");
 
 public sealed class GameRecord
 {
@@ -12,6 +19,7 @@ public sealed class GameRecord
     public required string GuestTeam { get; set; }
     public required string GameUrl { get; init; }
     public string Hall { get; set; } = string.Empty;
+    public string BroadcastGender { get; set; } = string.Empty;
     public bool IsSelected { get; set; } = true;
     public string CoverUrl { get; set; } = string.Empty;
     public string CoverPath { get; set; } = string.Empty;

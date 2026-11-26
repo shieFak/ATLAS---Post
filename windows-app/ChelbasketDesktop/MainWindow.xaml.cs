@@ -22,6 +22,7 @@ namespace ChelbasketDesktop;
 public partial class MainWindow : Window
 {
     private readonly ChelbasketClient _client = new();
+    private readonly AsbClient _asbClient = new();
     private List<GameRecord> _games = [];
     private List<VkStreamRow> _vkStreamRows = [];
     private readonly Dictionary<string, string> _createdStreamLinks = LoadCreatedStreamLinks();
@@ -40,6 +41,7 @@ public partial class MainWindow : Window
     private bool _userEditedIntro;
     private bool _userEditedHashtags;
     private bool _windowInitialized;
+    private string? _scheduleTournamentName;
 
     public MainWindow()
     {
@@ -53,16 +55,25 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         GameDatePicker.SelectedDate = DateTime.Today;
-        OutputFolderBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ChelbasketPackages");
+        OutputFolderBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AtlasPackages");
         VkStreamsStatusText.Text = "Открой VK Видео, войди в аккаунт и открой форму создания трансляции.";
         StatusText.Text = "Загружаю список турниров…";
         try
         {
-            var tournaments = await _client.GetTournamentsAsync();
+            var tournaments = new List<TournamentInfo>();
+            var sourceErrors = new List<string>();
+            try { tournaments.AddRange(await _client.GetTournamentsAsync()); }
+            catch (Exception ex) { sourceErrors.Add($"Федерация: {ex.Message}"); }
+            try { tournaments.AddRange(await _asbClient.GetTournamentsAsync()); }
+            catch (Exception ex) { sourceErrors.Add($"АСБ: {ex.Message}"); }
+            if (tournaments.Count == 0) throw new InvalidOperationException(string.Join(Environment.NewLine, sourceErrors));
             TournamentCombo.ItemsSource = tournaments;
             if (tournaments.Count > 0) TournamentCombo.SelectedIndex = 0;
             RefreshAutoFields();
-            StatusText.Text = $"Турниров в списке: {tournaments.Count}. Выбери дату и нажми «Найти игры».";
+            UpdateTournamentModeUi();
+            StatusText.Text = sourceErrors.Count == 0
+                ? $"Турниров в списке: {tournaments.Count}. Выбери дату и нажми «Найти игры»."
+                : $"Загружено турниров: {tournaments.Count}. Один из сайтов временно недоступен.";
         }
         catch (Exception ex)
         {
@@ -81,7 +92,7 @@ public partial class MainWindow : Window
             var update = await UpdateChecker.CheckAsync();
             if (update is null || !IsLoaded) return;
             var result = MessageBox.Show(this,
-                $"Доступно обновление Челбаскет ТВ-пакета {update.Version}.\n\nУстановлена версия {UpdateChecker.CurrentVersion}. Открыть страницу скачивания?",
+                $"Доступно обновление Атласа {update.Version}.\n\nУстановлена версия {UpdateChecker.CurrentVersion}. Открыть страницу скачивания?",
                 "Доступно обновление", MessageBoxButton.YesNo, MessageBoxImage.Information);
             if (result == MessageBoxResult.Yes)
                 Process.Start(new ProcessStartInfo(update.ReleasePage.AbsoluteUri) { UseShellExecute = true });
@@ -97,6 +108,7 @@ public partial class MainWindow : Window
             if (ReferenceEquals(sender, IntroBox)) _userEditedIntro = true;
             if (ReferenceEquals(sender, HashtagsBox)) _userEditedHashtags = true;
             if (ReferenceEquals(sender, TournamentCombo) || ReferenceEquals(sender, GameDatePicker)) RefreshAutoFields();
+            if (ReferenceEquals(sender, TournamentCombo)) UpdateTournamentModeUi();
         }
         UpdatePostPreview();
     }
@@ -112,6 +124,53 @@ public partial class MainWindow : Window
         }
         finally { _editingAutoFields = false; }
     }
+
+    private void UpdateTournamentModeUi()
+    {
+        if (TournamentCombo.SelectedItem is not TournamentInfo tournament) return;
+        var isAsb = tournament.Source == TournamentSource.Asb;
+        var autoScheduleAllowed = !RequiresManualScheduleCategory(tournament.Name);
+        AutoScheduleCategoryItem.IsEnabled = autoScheduleAllowed;
+        if (!string.Equals(_scheduleTournamentName, tournament.Name, StringComparison.Ordinal))
+        {
+            ScheduleCategoryCombo.SelectedIndex = autoScheduleAllowed ? 0 : 1;
+            _scheduleTournamentName = tournament.Name;
+        }
+        ScheduleOptionsBorder.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        FirstLinkLabel.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        FirstLinkBox.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        StreamLinkHelpText.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        PostFieldsHeader.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        IntroLabel.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        IntroBox.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        VenueLabel.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        VenueBox.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        HashtagsLabel.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        HashtagsBox.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        OutputFolderHelpText.Text = isAsb
+            ? tournament.IsAsbSpo
+                ? "В папке будут обложки выбранных игр, общий пост и список названий эфиров."
+                : "В папке будут отдельные посты, названия эфиров и ID игр."
+            : "В папке будут обложки, расписание, тексты и ZIP.";
+        PostFormatLabel.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        PostFormatCombo.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        PostHallLabel.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        PostHallCombo.Visibility = isAsb ? Visibility.Collapsed : Visibility.Visible;
+        PostGameLabel.Visibility = isAsb && !tournament.IsAsbSpo ? Visibility.Visible : Visibility.Collapsed;
+        PostGameCombo.Visibility = isAsb && !tournament.IsAsbSpo ? Visibility.Visible : Visibility.Collapsed;
+        CreatePackageButton.Content = isAsb && !tournament.IsAsbSpo
+            ? "Собрать посты и названия эфиров  →"
+            : isAsb
+                ? "Скачать обложки и собрать пост  →"
+                : "Скачать обложки и собрать пакет  →";
+        if (GamesGrid.Columns.Count > 0)
+            GamesGrid.Columns[0].Visibility = isAsb && !tournament.IsAsbSpo ? Visibility.Collapsed : Visibility.Visible;
+        UpdatePostPreview();
+    }
+
+    private static bool RequiresManualScheduleCategory(string tournamentName) =>
+        tournamentName.Contains("Кубок Голоса", StringComparison.CurrentCultureIgnoreCase) ||
+        tournamentName.Contains("Лига Зубкова", StringComparison.CurrentCultureIgnoreCase);
 
     private async void FindGames_Click(object sender, RoutedEventArgs e)
     {
@@ -131,8 +190,17 @@ public partial class MainWindow : Window
         StatusText.Text = $"Ищу игры: {PostBuilder.DisplayTournament(tournament.Name)}, {date:dd.MM.yyyy}…";
         try
         {
-            var games = await _client.GetGamesForDateAsync(tournament, date);
+            var games = tournament.Source == TournamentSource.Asb
+                ? await _asbClient.GetGamesForDateAsync(tournament, date)
+                : await _client.GetGamesForDateAsync(tournament, date);
             _games = games.ToList();
+            foreach (var game in _games)
+                if (tournament.Source == TournamentSource.Asb)
+                {
+                    game.HomeTeam = AsbPackageBuilder.NormalizeTeam(game.HomeTeam);
+                    game.GuestTeam = AsbPackageBuilder.NormalizeTeam(game.GuestTeam);
+                    game.Status = tournament.IsAsbSpo ? "Ожидает" : "Не требуется";
+                }
             RefreshVkStreamRows(tournament, date);
             GamesGrid.ItemsSource = _games;
             HallFilterCombo.Items.Clear();
@@ -148,6 +216,14 @@ public partial class MainWindow : Window
             if (_games.Any(game => string.IsNullOrWhiteSpace(game.Hall)))
                 PostHallCombo.Items.Add(new ComboBoxItem { Content = "Зал не указан" });
             PostHallCombo.SelectedIndex = PostHallCombo.Items.Count > 0 ? 0 : -1;
+            PostGameCombo.Items.Clear();
+            foreach (var game in _games)
+                PostGameCombo.Items.Add(new ComboBoxItem
+                {
+                    Content = $"{game.Time} · {game.HomeTeam} — {game.GuestTeam} ({game.BroadcastGender})",
+                    Tag = game
+                });
+            PostGameCombo.SelectedIndex = PostGameCombo.Items.Count > 0 ? 0 : -1;
             CreatePackageButton.IsEnabled = _games.Count > 0;
             _preparedVkGameId = null;
             _preparedVkGroupId = null;
@@ -161,7 +237,12 @@ public partial class MainWindow : Window
             WorkProgress.Value = 0;
             StatusText.Text = _games.Count == 0
                 ? "Проверь турнир и дату или выбери другой день."
-                : "Матчи загружены. Проверь ссылки и детали поста, затем собери пакет.";
+                : tournament.Source == TournamentSource.Asb && !tournament.IsAsbSpo
+                    ? "Матчи загружены. Выбери игру во вкладке «Пост» и скопируй отдельный текст для ВК."
+                    : tournament.Source == TournamentSource.Asb
+                        ? "Матчи загружены. Отметь игры, для которых нужны обложки, затем собери пост дня."
+                        : "Матчи загружены. Проверь ссылки и детали поста, затем собери пакет.";
+            UpdateTournamentModeUi();
             PreviewTabs.SelectedIndex = 0;
             UpdatePostPreview();
         }
@@ -177,6 +258,12 @@ public partial class MainWindow : Window
     {
         if (_games.Count == 0 || TournamentCombo.SelectedItem is not TournamentInfo tournament || GameDatePicker.SelectedDate is not DateTime date)
             return;
+
+        if (tournament.Source == TournamentSource.Asb)
+        {
+            await CreateAsbPackageAsync(tournament, date);
+            return;
+        }
 
         if (ScheduleCategoryCombo.SelectedItem is not ComboBoxItem selectedScheduleCategory ||
             string.IsNullOrWhiteSpace(selectedScheduleCategory.Content?.ToString()))
@@ -337,6 +424,120 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task CreateAsbPackageAsync(TournamentInfo tournament, DateTime date)
+    {
+        var outputRoot = OutputFolderBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(outputRoot) || !Path.IsPathRooted(outputRoot))
+        {
+            MessageBox.Show(this, "Укажи папку для сохранения результатов.", "Нужна папка", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        SetBusy(true);
+        _lastOutputFolder = null;
+        var packageFolder = string.Empty;
+        var errors = new List<string>();
+        var selectedGames = _games.Where(game => game.IsSelected).ToList();
+        var reused = 0;
+        var downloaded = 0;
+        foreach (var game in _games.Where(game => !game.IsSelected)) game.Status = "Не выбрана";
+
+        try
+        {
+            packageFolder = PackageBuilder.CreatePackageFolder(outputRoot, tournament.Name, date);
+            _lastOutputFolder = packageFolder;
+            if (tournament.IsAsbSpo && selectedGames.Count > 0)
+            {
+                try
+                {
+                    await EnsureBrowserAsync();
+                    PreviewTabs.SelectedItem = BrowserTab;
+                }
+                catch (Exception ex) { errors.Add($"Не запустился встроенный браузер: {ex.Message}"); }
+
+                var existingCovers = IndexExistingCovers(outputRoot, packageFolder);
+                for (var index = 0; index < selectedGames.Count; index++)
+                {
+                    var game = selectedGames[index];
+                    WorkProgress.Value = index * 85.0 / selectedGames.Count;
+                    StatusText.Text = $"Обложка АСБ СПО {index + 1} из {selectedGames.Count}: {game.HomeTeam} — {game.GuestTeam}";
+                    game.Status = "Загружается…";
+                    GamesGrid.Items.Refresh();
+                    try
+                    {
+                        var targetPath = Path.Combine(packageFolder, PackageBuilder.CoverFileName(game));
+                        var wasReused = false;
+                        if (existingCovers.TryGetValue(game.Id, out var existingPath))
+                        {
+                            try
+                            {
+                                await VerifyPngAsync(existingPath);
+                                File.Copy(existingPath, targetPath, overwrite: false);
+                                await VerifyPngAsync(targetPath);
+                                wasReused = true;
+                                reused++;
+                            }
+                            catch { TryDeletePartialCover(packageFolder, game); }
+                        }
+                        if (!wasReused)
+                        {
+                            if (!_browserReady) throw new InvalidOperationException("Встроенный браузер не запустился.");
+                            await NavigateToCoverAsync(game.CoverUrl);
+                            await WaitForCoverReadyAsync();
+                            await UpdateTeamsFromCoverPageAsync(game);
+                            targetPath = Path.Combine(packageFolder, PackageBuilder.CoverFileName(game));
+                            await TriggerCoverDownloadAsync(targetPath);
+                            await VerifyPngAsync(targetPath);
+                            downloaded++;
+                        }
+                        game.CoverPath = targetPath;
+                        game.Status = wasReused ? "Взята из папки" : "Скачана";
+                    }
+                    catch (Exception ex)
+                    {
+                        game.Status = "Ошибка";
+                        errors.Add($"{game.Number:00}. {game.HomeTeam} - {game.GuestTeam}: {ex.Message}");
+                        TryDeletePartialCover(packageFolder, game);
+                    }
+                    GamesGrid.Items.Refresh();
+                }
+            }
+
+            StatusText.Text = "Сохраняю тексты и собираю ZIP…";
+            var result = await AsbPackageBuilder.WritePackageAsync(packageFolder, tournament, date, _games);
+            _lastOutputFolder = result.FolderPath;
+            OpenOutputButton.IsEnabled = true;
+            WorkProgress.Value = 100;
+            var summary = tournament.IsAsbSpo
+                ? $"Готово · {_games.Count} игр · обложек выбрано {selectedGames.Count} · скачано {downloaded} · использовано {reused} · расписание не требуется"
+                : $"Готово · {_games.Count} игр · отдельные посты и названия эфиров подготовлены · обложки и расписание не требуются";
+            SummaryText.Text = summary;
+            StatusText.Text = $"Материалы АСБ сохранены: {packageFolder}";
+            PreviewTabs.SelectedIndex = 0;
+
+            if (errors.Count > 0)
+            {
+                var details = string.Join(Environment.NewLine, errors.Take(12));
+                if (errors.Count > 12) details += Environment.NewLine + $"…и ещё {errors.Count - 12} ошибок.";
+                MessageBox.Show(this,
+                    $"Пакет собран, но часть обложек не загрузилась. Тексты, названия эфиров и ID сохранены.\n\n{details}",
+                    "Готово с ошибками", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Не удалось собрать материалы АСБ.";
+            MessageBox.Show(this, $"Не удалось завершить сборку. Уже сохранённые файлы находятся в выбранной папке.\n\n{ex.Message}",
+                "Ошибка сборки", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            WorkProgress.Value = 0;
+            SetBusy(false);
+            CreatePackageButton.IsEnabled = _games.Count > 0;
+        }
+    }
+
     private async Task EnsureBrowserAsync()
     {
         if (_browserReady) return;
@@ -393,10 +594,13 @@ public partial class MainWindow : Window
 
         var categoryChoice = (ScheduleCategoryCombo.SelectedItem as ComboBoxItem)?.Content?.ToString()
             ?? throw new InvalidOperationException("Выбери категорию расписания.");
-        var categorySet = await core.ExecuteScriptAsync(
-            $"(() => {{ const el=document.querySelector('#categorytitle'); if(!el) return false; el.value={JsonSerializer.Serialize(categoryChoice)}; for(const type of ['input','keyup','change']) el.dispatchEvent(new Event(type,{{bubbles:true}})); return true; }})()");
-        if (!categorySet.Equals("true", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Не найдено поле категории на форме расписания.");
+        if (!categoryChoice.StartsWith("Автоматически", StringComparison.CurrentCultureIgnoreCase))
+        {
+            var categorySet = await core.ExecuteScriptAsync(
+                $"(() => {{ const el=document.querySelector('#categorytitle'); if(!el) return false; el.value={JsonSerializer.Serialize(categoryChoice)}; for(const type of ['input','keyup','change']) el.dispatchEvent(new Event(type,{{bubbles:true}})); return true; }})()");
+            if (!categorySet.Equals("true", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Не найдено поле категории на форме расписания.");
+        }
 
         var submitResult = await core.ExecuteScriptAsync(
             "(() => { const form=document.querySelector('#form-schedule'); if(!form) return false; const button=form.querySelector('#submit'); if(button) button.click(); else form.requestSubmit(); return true; })()");
@@ -455,15 +659,16 @@ public partial class MainWindow : Window
     {
         var core = CoverBrowser.CoreWebView2 ?? throw new InvalidOperationException("Встроенный браузер не инициализирован.");
         var raw = await core.ExecuteScriptAsync(
-            "JSON.stringify({home:document.querySelector('#teamnameA')?.value||'', guest:document.querySelector('#teamnameB')?.value||''})");
+            "JSON.stringify({home:document.querySelector('#teamnameA, #teamnamea, [data-target=teamnamea]')?.value||'', guest:document.querySelector('#teamnameB, #teamnameb, [data-target=teamnameb]')?.value||''})");
         var json = JsonSerializer.Deserialize<string>(raw);
         if (string.IsNullOrWhiteSpace(json)) return;
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         var home = root.TryGetProperty("home", out var homeValue) ? homeValue.GetString()?.Trim() : null;
         var guest = root.TryGetProperty("guest", out var guestValue) ? guestValue.GetString()?.Trim() : null;
-        if (!string.IsNullOrWhiteSpace(home)) game.HomeTeam = home;
-        if (!string.IsNullOrWhiteSpace(guest)) game.GuestTeam = guest;
+        var isAsb = TournamentCombo.SelectedItem is TournamentInfo { Source: TournamentSource.Asb };
+        if (!string.IsNullOrWhiteSpace(home)) game.HomeTeam = isAsb ? AsbPackageBuilder.NormalizeTeam(home) : home;
+        if (!string.IsNullOrWhiteSpace(guest)) game.GuestTeam = isAsb ? AsbPackageBuilder.NormalizeTeam(guest) : guest;
         GamesGrid.Items.Refresh();
         UpdatePostPreview();
     }
@@ -575,6 +780,16 @@ public partial class MainWindow : Window
             CopyPostButton.IsEnabled = false;
             return;
         }
+        if (tournament.Source == TournamentSource.Asb)
+        {
+            PostPreviewBox.Text = tournament.IsAsbSpo
+                ? AsbPackageBuilder.BuildSpoDayPost(tournament, _games)
+                : PostGameCombo.SelectedItem is ComboBoxItem { Tag: GameRecord selectedGame }
+                    ? AsbPackageBuilder.BuildSingleGamePost(tournament, selectedGame)
+                    : string.Empty;
+            CopyPostButton.IsEnabled = !string.IsNullOrWhiteSpace(PostPreviewBox.Text);
+            return;
+        }
         var allHalls = IsAllHallsPost();
         PostHallCombo.IsEnabled = !allHalls;
         PostPreviewBox.Text = allHalls
@@ -639,7 +854,9 @@ public partial class MainWindow : Window
         _vkStreamRows = _games.Select(game => new VkStreamRow
         {
             Game = game,
-            Title = PackageBuilder.GameTitle(tournament.Name, date, game),
+            Title = tournament.Source == TournamentSource.Asb
+                ? AsbPackageBuilder.BroadcastTitle(tournament, date, game)
+                : PackageBuilder.GameTitle(tournament.Name, date, game),
             Link = _createdStreamLinks.GetValueOrDefault(game.Id, string.Empty),
             Status = _createdStreamLinks.ContainsKey(game.Id) ? "Создан" : "Ожидает"
         }).ToList();
@@ -1258,7 +1475,7 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFolderDialog
         {
-            Title = "Папка для пакетов Челбаскета",
+            Title = "Папка для пакетов Атласа",
             InitialDirectory = Directory.Exists(OutputFolderBox.Text) ? OutputFolderBox.Text : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
         };
         if (dialog.ShowDialog(this) == true) OutputFolderBox.Text = dialog.FolderName;

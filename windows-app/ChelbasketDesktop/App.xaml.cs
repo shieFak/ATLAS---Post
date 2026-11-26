@@ -45,7 +45,7 @@ public partial class App : Application
         try
         {
             MessageBox.Show(
-                $"Челбаскет ТВ-пакет не смог открыть окно.\n\n{exception.Message}\n\nПодробности сохранены в:\n{LogPath}",
+                $"Атлас не смог открыть окно.\n\n{exception.Message}\n\nПодробности сохранены в:\n{LogPath}",
                 "Ошибка запуска", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         catch { }

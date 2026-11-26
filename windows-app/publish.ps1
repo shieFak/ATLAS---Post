@@ -15,7 +15,7 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Не удалось собрать Windows-приложение.'
 }
 
-$executable = Join-Path $outputDirectory 'ChelbasketDesktop.exe'
+$executable = Join-Path $outputDirectory 'Atlas.exe'
 if (-not (Test-Path -LiteralPath $executable)) {
     throw "EXE не найден после сборки: $executable"
 }

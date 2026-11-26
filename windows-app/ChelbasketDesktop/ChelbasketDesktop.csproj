@@ -2,6 +2,11 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>Atlas</AssemblyName>
+    <AssemblyTitle>Атлас</AssemblyTitle>
+    <Product>Атлас</Product>
+    <Description>Подготовка постов, ТВ-обложек и расписания матчей</Description>
+    <ApplicationIcon>Assets\atlas-logo.ico</ApplicationIcon>
     <TargetFramework>net10.0-windows</TargetFramework>
     <Version>1.0.0</Version>
     <Nullable>enable</Nullable>
@@ -11,6 +16,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4370.26" />
+    <Resource Include="Assets\atlas-logo-512.png" />
+    <Resource Include="Assets\atlas-logo.ico" />
   </ItemGroup>
 
 </Project>

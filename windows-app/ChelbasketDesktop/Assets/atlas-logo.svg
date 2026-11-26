@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="160" y1="100" x2="1040" y2="1100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D3555"/>
+      <stop offset="1" stop-color="#071B2D"/>
+    </linearGradient>
+    <linearGradient id="eye" x1="193" y1="604" x2="1007" y2="604" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF9A3C"/>
+      <stop offset="1" stop-color="#F36B2B"/>
+    </linearGradient>
+    <clipPath id="ballClip"><circle cx="600" cy="600" r="184"/></clipPath>
+  </defs>
+  <rect width="1200" height="1200" rx="260" fill="url(#bg)"/>
+  <path d="M142 600C267 425 419 337 600 337C781 337 933 425 1058 600C933 775 781 863 600 863C419 863 267 775 142 600Z" fill="url(#eye)"/>
+  <circle cx="600" cy="600" r="205" fill="#F7F4ED"/>
+  <circle cx="600" cy="600" r="184" fill="#F47B32"/>
+  <g clip-path="url(#ballClip)" stroke="#0D3555" stroke-width="22" stroke-linecap="round">
+    <path d="M600 405V795"/>
+    <path d="M416 600H784"/>
+    <path d="M468 470C565 520 635 680 732 730"/>
+    <path d="M732 470C635 520 565 680 468 730"/>
+  </g>
+  <circle cx="600" cy="600" r="8" fill="#F7F4ED"/>
+</svg>

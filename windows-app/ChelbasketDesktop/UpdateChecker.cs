@@ -36,7 +36,7 @@ public static class UpdateChecker
     private static HttpClient CreateClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("ChelbasketDesktop", CurrentVersion.ToString()));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Atlas", CurrentVersion.ToString()));
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         return client;
     }
