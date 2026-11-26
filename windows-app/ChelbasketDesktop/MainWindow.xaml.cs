@@ -1,6 +1,12 @@
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Win32;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -22,8 +28,10 @@ public partial class MainWindow : Window
     private string? _lastOutputFolder;
     private bool _browserReady;
     private bool _vkBrowserReady;
-    private WebView2? _vkVideoBrowser;
-    private Window? _vkVideoWindow;
+    private Process? _vkEdgeProcess;
+    private HttpClient? _vkEdgeHttp;
+    private VkCdpSession? _vkCdp;
+    private int _vkEdgeDebugPort;
     private string? _pendingVkGameId;
     private string? _preparedVkGameId;
     private string? _preparedVkGroupId;
@@ -161,6 +169,15 @@ public partial class MainWindow : Window
     {
         if (_games.Count == 0 || TournamentCombo.SelectedItem is not TournamentInfo tournament || GameDatePicker.SelectedDate is not DateTime date)
             return;
+
+        if (ScheduleCategoryCombo.SelectedItem is not ComboBoxItem selectedScheduleCategory ||
+            string.IsNullOrWhiteSpace(selectedScheduleCategory.Content?.ToString()))
+        {
+            MessageBox.Show(this, "Выбери, кто играет, чтобы добавить категорию в расписание.",
+                "Выбери категорию расписания", MessageBoxButton.OK, MessageBoxImage.Information);
+            ScheduleCategoryCombo.Focus();
+            return;
+        }
 
         var firstLink = FirstLinkBox.Text.Trim();
         if (!string.IsNullOrWhiteSpace(firstLink) && !PostBuilder.TryExpandStreamLink(firstLink, 0, out _))
@@ -366,14 +383,12 @@ public partial class MainWindow : Window
         if (!titleSet.Equals("true", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Не найдено поле названия турнира в форме расписания.");
 
-        var categoryChoice = (ScheduleCategoryCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Автоматически (из сайта)";
-        if (!categoryChoice.StartsWith("Автоматически", StringComparison.CurrentCultureIgnoreCase))
-        {
-            var categorySet = await core.ExecuteScriptAsync(
-                $"(() => {{ const el=document.querySelector('#categorytitle'); if(!el) return false; el.value={JsonSerializer.Serialize(categoryChoice)}; for(const type of ['input','keyup','change']) el.dispatchEvent(new Event(type,{{bubbles:true}})); return true; }})()");
-            if (!categorySet.Equals("true", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Не найдено поле категории на форме расписания.");
-        }
+        var categoryChoice = (ScheduleCategoryCombo.SelectedItem as ComboBoxItem)?.Content?.ToString()
+            ?? throw new InvalidOperationException("Выбери категорию расписания.");
+        var categorySet = await core.ExecuteScriptAsync(
+            $"(() => {{ const el=document.querySelector('#categorytitle'); if(!el) return false; el.value={JsonSerializer.Serialize(categoryChoice)}; for(const type of ['input','keyup','change']) el.dispatchEvent(new Event(type,{{bubbles:true}})); return true; }})()");
+        if (!categorySet.Equals("true", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Не найдено поле категории на форме расписания.");
 
         var submitResult = await core.ExecuteScriptAsync(
             "(() => { const form=document.querySelector('#form-schedule'); if(!form) return false; const button=form.querySelector('#submit'); if(button) button.click(); else form.requestSubmit(); return true; })()");
@@ -644,40 +659,57 @@ public partial class MainWindow : Window
 
     private async Task EnsureVkVideoBrowserAsync()
     {
-        if (_vkBrowserReady) return;
-        var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChelbasketTV", "VkVideoBrowser");
+        if (_vkCdp is not null && _vkEdgeProcess is { HasExited: false }) return;
+        var edgePath = FindMicrosoftEdgePath();
+        if (edgePath is null) throw new FileNotFoundException("Microsoft Edge не найден. Установи Edge и повтори.");
+        var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChelbasketTV", "VkEdgeProfile");
         Directory.CreateDirectory(userData);
-        // WebView2 may never finish EnsureCoreWebView2Async while its visual parent is collapsed.
-        // Make the host visible for initialization; ShowVkVideoWindow moves it immediately after.
-        VkVideoBrowserHost.Visibility = Visibility.Visible;
-        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded);
-        var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
-        _vkVideoBrowser = new WebView2 { Visibility = Visibility.Visible };
-        VkVideoBrowserHost.Content = _vkVideoBrowser;
-        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded);
-        await _vkVideoBrowser.EnsureCoreWebView2Async(environment);
-        _vkVideoBrowser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
-        _vkVideoBrowser.CoreWebView2.Settings.IsStatusBarEnabled = true;
-        _vkVideoBrowser.CoreWebView2.Settings.AreDevToolsEnabled = false;
-        _vkVideoBrowser.CoreWebView2.NewWindowRequested += (_, args) =>
+        using (var listener = new TcpListener(IPAddress.Loopback, 0))
         {
-            if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var popupUri) &&
-                (popupUri.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
-                 popupUri.Host.Equals("live.vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
-                 popupUri.Host.Equals("vk.ru", StringComparison.OrdinalIgnoreCase) ||
-                 popupUri.Host.Equals("vk.com", StringComparison.OrdinalIgnoreCase)))
+            listener.Start();
+            _vkEdgeDebugPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        var start = new ProcessStartInfo(edgePath) { UseShellExecute = false, WindowStyle = ProcessWindowStyle.Normal };
+        foreach (var arg in new[] { $"--remote-debugging-port={_vkEdgeDebugPort}", "--remote-debugging-address=127.0.0.1", "--remote-allow-origins=*", $"--user-data-dir={userData}", "--no-first-run", "--new-window", "https://vkvideo.ru/" })
+            start.ArgumentList.Add(arg);
+        _vkEdgeProcess = Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить Microsoft Edge.");
+        _vkEdgeHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        var endpoint = new Uri($"http://127.0.0.1:{_vkEdgeDebugPort}/json/list");
+        var until = DateTime.UtcNow.AddSeconds(30);
+        string? socketUrl = null;
+        while (DateTime.UtcNow < until && socketUrl is null)
+        {
+            if (_vkEdgeProcess.HasExited) throw new InvalidOperationException("Microsoft Edge закрылся при запуске.");
+            try
             {
-                args.Handled = true;
-                _vkVideoBrowser.CoreWebView2.Navigate(popupUri.AbsoluteUri);
+                var targets = await _vkEdgeHttp.GetFromJsonAsync<List<EdgeTarget>>(endpoint);
+                socketUrl = targets?.FirstOrDefault(target => target.Type == "page" && Uri.TryCreate(target.Url, UriKind.Absolute, out var uri) &&
+                    (uri.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("live.vkvideo.ru", StringComparison.OrdinalIgnoreCase)))?.WebSocketDebuggerUrl;
             }
-        };
+            catch (HttpRequestException) { }
+            catch (TaskCanceledException) { }
+            if (socketUrl is null) await Task.Delay(250);
+        }
+        if (socketUrl is null) throw new TimeoutException("Edge запущен, но страница VK Видео не открылась для управления.");
+        _vkCdp = await VkCdpSession.ConnectAsync(socketUrl);
         _vkBrowserReady = true;
         ExpandVkBrowserButton.IsEnabled = true;
         ResetVkSessionButton.IsEnabled = true;
         RefreshVkActionButtons();
     }
 
-    private WebView2 VkVideoBrowser => _vkVideoBrowser ?? throw new InvalidOperationException("Браузер VK ещё не открыт.");
+    private static string? FindMicrosoftEdgePath()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Edge", "Application", "msedge.exe")
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private sealed record EdgeTarget(string Type, string Url, string WebSocketDebuggerUrl);
 
     private async void OpenVkVideo_Click(object sender, RoutedEventArgs e)
     {
@@ -686,14 +718,14 @@ public partial class MainWindow : Window
         try
         {
             await EnsureVkVideoBrowserAsync();
-            if (!Uri.TryCreate(VkVideoBrowser.Source?.AbsoluteUri, UriKind.Absolute, out var current) ||
+            if (!Uri.TryCreate(await VkVideoUrlAsync(), UriKind.Absolute, out var current) ||
                 !(current.Host.Equals("vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
                   current.Host.Equals("live.vkvideo.ru", StringComparison.OrdinalIgnoreCase) ||
                   current.Host.Equals("vk.ru", StringComparison.OrdinalIgnoreCase) ||
                   current.Host.Equals("vk.com", StringComparison.OrdinalIgnoreCase)))
-                VkVideoBrowser.CoreWebView2.Navigate("https://vkvideo.ru/");
-            ShowVkVideoWindow();
-            VkStreamsStatusText.Text = "Войди в VK в отдельном окне. Сессию можно будет использовать и дальше.";
+                await VkVideoNavigateAsync("https://vkvideo.ru/");
+            await ShowVkVideoWindowAsync();
+            VkStreamsStatusText.Text = "Войди в обычном окне Microsoft Edge. Профиль VK сохраняется для следующих запусков.";
             RefreshVkActionButtons();
         }
         catch (Exception ex)
@@ -703,13 +735,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ExpandVkBrowser_Click(object sender, RoutedEventArgs e) => ShowVkVideoWindow();
+    private async void ExpandVkBrowser_Click(object sender, RoutedEventArgs e) => await ShowVkVideoWindowAsync();
 
     private async void ResetVkSession_Click(object sender, RoutedEventArgs e)
     {
         if (!_vkBrowserReady) return;
         var confirm = MessageBox.Show(this,
-            "Очистить cookies и данные только встроенного браузера VK Видео? Потребуется войти заново. Обычный браузер и файлы пакетов не затрагиваются.",
+            "Очистить cookies и данные отдельного профиля Edge для VK Видео? Потребуется войти заново. Обычный профиль Edge и файлы пакетов не затрагиваются.",
             "Сбросить вход VK", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (confirm != MessageBoxResult.Yes) return;
 
@@ -717,8 +749,9 @@ public partial class MainWindow : Window
         VkStreamsStatusText.Text = "Очищаю устаревшую сессию VK Видео…";
         try
         {
-            await VkVideoBrowser.CoreWebView2.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllSite);
-            VkVideoBrowser.CoreWebView2.Navigate("https://vkvideo.ru/");
+            await _vkCdp!.ClearCookiesAsync();
+            await VkVideoEvaluateAsync("(() => { try { localStorage.clear(); sessionStorage.clear(); } catch {} return true; })()");
+            await VkVideoNavigateAsync("https://vkvideo.ru/");
             VkStreamsStatusText.Text = "Сессия очищена. Войди заново в VK Видео.";
         }
         catch (Exception ex)
@@ -729,75 +762,14 @@ public partial class MainWindow : Window
         finally { ResetVkSessionButton.IsEnabled = true; }
     }
 
-    private void ShowVkVideoWindow()
+    private async Task ShowVkVideoWindowAsync()
     {
-        if (_vkVideoWindow is not null)
+        if (_vkEdgeProcess is { HasExited: false })
         {
-            _vkVideoWindow.Activate();
-            return;
+            NativeMethods.ShowWindow(_vkEdgeProcess.MainWindowHandle, 9);
+            NativeMethods.SetForegroundWindow(_vkEdgeProcess.MainWindowHandle);
         }
-
-        var browser = VkVideoBrowser;
-        VkVideoBrowserHost.Content = null;
-        VkVideoBrowserHost.Visibility = Visibility.Collapsed;
-
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10) };
-        var zoomLabel = new TextBlock
-        {
-            Text = $"{Math.Round(browser.ZoomFactor * 100)}%",
-            VerticalAlignment = VerticalAlignment.Center,
-            MinWidth = 52,
-            TextAlignment = TextAlignment.Center
-        };
-        Button AddButton(string caption, Action action)
-        {
-            var button = new Button { Content = caption, MinWidth = 42, Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(10, 5, 10, 5) };
-            button.Click += (_, _) => action();
-            toolbar.Children.Add(button);
-            return button;
-        }
-
-        AddButton("← Назад", () => { if (browser.CoreWebView2?.CanGoBack == true) browser.CoreWebView2.GoBack(); });
-        AddButton("Вперёд →", () => { if (browser.CoreWebView2?.CanGoForward == true) browser.CoreWebView2.GoForward(); });
-        AddButton("↻ Обновить", () => browser.CoreWebView2?.Reload());
-        AddButton("−", () => SetZoom(-0.1));
-        toolbar.Children.Add(zoomLabel);
-        AddButton("+", () => SetZoom(0.1));
-        AddButton("100%", () => { browser.ZoomFactor = 1; zoomLabel.Text = "100%"; });
-
-        void SetZoom(double delta)
-        {
-            browser.ZoomFactor = Math.Clamp(browser.ZoomFactor + delta, 0.6, 2.0);
-            zoomLabel.Text = $"{Math.Round(browser.ZoomFactor * 100)}%";
-        }
-
-        var layout = new DockPanel();
-        DockPanel.SetDock(toolbar, Dock.Top);
-        layout.Children.Add(toolbar);
-        browser.Height = double.NaN;
-        layout.Children.Add(browser);
-
-        var window = new Window
-        {
-            Title = "VK Видео — Челбаскет ТВ-пакет",
-            Owner = this,
-            Width = 1400,
-            Height = 900,
-            MinWidth = 900,
-            MinHeight = 600,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            WindowState = WindowState.Maximized,
-            Content = layout
-        };
-        _vkVideoWindow = window;
-        window.Closed += (_, _) =>
-        {
-            layout.Children.Remove(browser);
-            VkVideoBrowserHost.Content = browser;
-            VkVideoBrowserHost.Visibility = Visibility.Visible;
-            _vkVideoWindow = null;
-        };
-        window.Show();
+        await Task.CompletedTask;
     }
 
     private async void FillStreamForm_Click(object sender, RoutedEventArgs e)
@@ -807,7 +779,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "Сначала выбери игру в таблице.", "Выбери игру", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (!_vkBrowserReady || string.IsNullOrWhiteSpace(_vkVideoBrowser?.Source?.AbsoluteUri))
+        if (!_vkBrowserReady || _vkCdp is null)
         {
             MessageBox.Show(this, "Сначала открой VK Видео и перейди к форме создания эфира.", "VK Видео не открыто", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -1049,7 +1021,7 @@ public partial class MainWindow : Window
         const string script = "(() => {const values=[location.href,...[...document.querySelectorAll('a[href]')].map(a=>a.href),...[...document.querySelectorAll('input,textarea,[contenteditable=true]')].map(e=>e.value||e.innerText||e.textContent),...(document.body?.innerText||'').match(/https?:\\/\\/(?:live\\.)?(?:vkvideo\\.ru|vk\\.ru|vk\\.com)\\/live-[\\w-]+/gi)||[])];return values.filter(Boolean);})()";
         while (DateTime.UtcNow < until)
         {
-            var source = _vkVideoBrowser?.Source?.AbsoluteUri;
+            var source = await VkVideoUrlAsync();
             if (TryNormalizeVkStreamLink(source, out var normalized) && !existingLinks.Contains(normalized)) return normalized;
             try
             {
@@ -1068,10 +1040,17 @@ public partial class MainWindow : Window
 
     private async Task<JsonElement> ExecuteVkScriptAsync(string script)
     {
-        var raw = await VkVideoBrowser.CoreWebView2.ExecuteScriptAsync(script);
-        using var result = JsonDocument.Parse(raw);
-        return result.RootElement.Clone();
+        return await VkVideoEvaluateAsync(script);
     }
+
+    private async Task<JsonElement> VkVideoEvaluateAsync(string expression) =>
+        await (_vkCdp ?? throw new InvalidOperationException("Edge не подключён.")).EvaluateAsync(expression);
+
+    private async Task<string> VkVideoUrlAsync() =>
+        (await VkVideoEvaluateAsync("location.href")).GetString() ?? string.Empty;
+
+    private async Task VkVideoNavigateAsync(string url) =>
+        await (_vkCdp ?? throw new InvalidOperationException("Edge не подключён.")).NavigateAsync(url);
 
     private static bool TryNormalizeVkStreamLink(string? value, out string normalized)
     {
@@ -1111,7 +1090,7 @@ public partial class MainWindow : Window
         RefreshVkActionButtons();
     }
 
-    private void SaveCurrentStreamLink_Click(object sender, RoutedEventArgs e)
+    private async void SaveCurrentStreamLink_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_pendingVkGameId))
         {
@@ -1120,7 +1099,7 @@ public partial class MainWindow : Window
         }
 
         var value = string.IsNullOrWhiteSpace(VkCurrentLinkBox.Text)
-            ? _vkVideoBrowser?.Source?.AbsoluteUri
+            ? await VkVideoUrlAsync()
             : VkCurrentLinkBox.Text.Trim();
         if (!TryNormalizeVkStreamLink(value, out var link))
         {
@@ -1133,6 +1112,75 @@ public partial class MainWindow : Window
     }
 
     private sealed record VkTargetSettings(string GroupId, string ChannelName);
+
+    private static class NativeMethods
+    {
+        [DllImport("user32.dll")]
+        internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        [DllImport("user32.dll")]
+        internal static extern bool SetForegroundWindow(IntPtr hWnd);
+    }
+
+    private sealed class VkCdpSession
+    {
+        private readonly ClientWebSocket _socket = new();
+        private readonly SemaphoreSlim _gate = new(1, 1);
+        private int _nextId;
+
+        private VkCdpSession() { }
+
+        internal static async Task<VkCdpSession> ConnectAsync(string webSocketUrl)
+        {
+            var session = new VkCdpSession();
+            await session._socket.ConnectAsync(new Uri(webSocketUrl), CancellationToken.None);
+            return session;
+        }
+
+        internal async Task<JsonElement> EvaluateAsync(string expression)
+        {
+            var result = await SendAsync("Runtime.evaluate", new { expression, returnByValue = true, awaitPromise = true });
+            if (result.TryGetProperty("exceptionDetails", out var exception))
+                throw new InvalidOperationException(exception.ToString());
+            if (!result.TryGetProperty("result", out var remote) || !remote.TryGetProperty("value", out var value))
+                return JsonDocument.Parse("null").RootElement.Clone();
+            return value.Clone();
+        }
+
+        internal async Task NavigateAsync(string url) => await SendAsync("Page.navigate", new { url });
+
+        internal async Task ClearCookiesAsync() => await SendAsync("Network.clearBrowserCookies", new { });
+
+        private async Task<JsonElement> SendAsync(string method, object parameters)
+        {
+            await _gate.WaitAsync();
+            try
+            {
+                var id = Interlocked.Increment(ref _nextId);
+                var payload = JsonSerializer.SerializeToUtf8Bytes(new { id, method, @params = parameters });
+                await _socket.SendAsync(payload, WebSocketMessageType.Text, true, CancellationToken.None);
+                var buffer = new byte[65536];
+                while (true)
+                {
+                    using var stream = new MemoryStream();
+                    WebSocketReceiveResult received;
+                    do
+                    {
+                        received = await _socket.ReceiveAsync(buffer, CancellationToken.None);
+                        if (received.MessageType == WebSocketMessageType.Close)
+                            throw new IOException("Edge закрыл соединение управления.");
+                        stream.Write(buffer, 0, received.Count);
+                    } while (!received.EndOfMessage);
+
+                    using var document = JsonDocument.Parse(stream.ToArray());
+                    var root = document.RootElement;
+                    if (!root.TryGetProperty("id", out var responseId) || responseId.GetInt32() != id) continue;
+                    if (root.TryGetProperty("error", out var error)) throw new InvalidOperationException(error.ToString());
+                    return root.TryGetProperty("result", out var result) ? result.Clone() : JsonDocument.Parse("{}").RootElement.Clone();
+                }
+            }
+            finally { _gate.Release(); }
+        }
+    }
 
     private static string VkTargetSettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChelbasketTV", "vk-target.json");

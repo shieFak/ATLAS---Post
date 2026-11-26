@@ -195,13 +195,15 @@
                         <Border Background="#F7F9FB" CornerRadius="11" Padding="13" Margin="0,17,0,0">
                             <StackPanel>
                                 <TextBlock Text="РАСПИСАНИЕ" Foreground="#52677A" FontSize="10" FontWeight="Bold" Margin="0,0,0,7" />
-                                <ComboBox x:Name="ScheduleCategoryCombo" SelectedIndex="0" SelectionChanged="Inputs_Changed">
-                                    <ComboBoxItem Content="Автоматически (из сайта)" />
-                                    <ComboBoxItem Content="Юноши" />
+                                <ComboBox x:Name="ScheduleCategoryCombo" SelectedIndex="-1" SelectionChanged="Inputs_Changed">
                                     <ComboBoxItem Content="Девушки" />
+                                    <ComboBoxItem Content="Юноши" />
                                     <ComboBoxItem Content="Мужчины" />
                                     <ComboBoxItem Content="Женщины" />
+                                    <ComboBoxItem Content="Юноши и девушки" />
+                                    <ComboBoxItem Content="Женщины и мужчины" />
                                 </ComboBox>
+                                <TextBlock Text="Выбери категорию игр для заголовка расписания." Foreground="{StaticResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="1,5,0,0" />
                             </StackPanel>
                         </Border>
 
@@ -282,8 +284,8 @@
                                     </Grid>
                                 </Border>
                                 <DockPanel Grid.Row="2" Margin="0,0,0,9">
-                                    <Button x:Name="ConnectVkButton" Content="Открыть VK Видео" Click="OpenVkVideo_Click" Margin="0,0,8,0" />
-                                    <Button x:Name="ExpandVkBrowserButton" Content="Развернуть окно VK" Click="ExpandVkBrowser_Click" Margin="0,0,8,0" IsEnabled="False" />
+                                    <Button x:Name="ConnectVkButton" Content="Открыть VK в Edge" Click="OpenVkVideo_Click" Margin="0,0,8,0" />
+                                    <Button x:Name="ExpandVkBrowserButton" Content="Показать окно Edge" Click="ExpandVkBrowser_Click" Margin="0,0,8,0" IsEnabled="False" />
                                     <Button x:Name="ResetVkSessionButton" Content="Сбросить вход VK" Click="ResetVkSession_Click" Margin="0,0,8,0" IsEnabled="False" ToolTip="Очистить только cookies и данные встроенного браузера VK Видео" />
                                     <Button x:Name="PrepareVkStreamButton" Content="Подготовить выбранную игру" Click="FillStreamForm_Click" IsEnabled="False" Margin="0,0,8,0" />
                                     <Button x:Name="CreateVkStreamButton" Content="Создать эфир в VK" Style="{StaticResource PrimaryButton}" Click="CreateVkStream_Click" IsEnabled="False" />
@@ -305,7 +307,6 @@
                                     <Button Content="Сохранить ссылку вручную" Click="SaveCurrentStreamLink_Click" Margin="0,0,8,0" />
                                     <TextBox x:Name="VkCurrentLinkBox" ToolTip="Резервный вариант: вставь сюда ссылку, если VK не отдал её странице эфира" VerticalContentAlignment="Center" />
                                 </DockPanel>
-                                <ContentControl x:Name="VkVideoBrowserHost" Grid.Row="5" Height="180" Visibility="Collapsed" />
                             </Grid>
                         </TabItem>
                         <TabItem x:Name="BrowserTab" Header="Страница экспорта"><wv2:WebView2 x:Name="CoverBrowser" DefaultBackgroundColor="#FFFFFF" /></TabItem>
