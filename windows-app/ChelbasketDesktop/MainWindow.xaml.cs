@@ -137,9 +137,17 @@ public partial class MainWindow : Window
             GamesGrid.ItemsSource = _games;
             HallFilterCombo.Items.Clear();
             HallFilterCombo.Items.Add(new ComboBoxItem { Content = "Все залы" });
-            foreach (var hall in _games.Select(game => game.Hall).Where(hall => !string.IsNullOrWhiteSpace(hall)).Distinct(StringComparer.CurrentCultureIgnoreCase).OrderBy(hall => hall, StringComparer.CurrentCultureIgnoreCase))
+            var halls = _games.Select(game => game.Hall).Where(hall => !string.IsNullOrWhiteSpace(hall))
+                .Distinct(StringComparer.CurrentCultureIgnoreCase).OrderBy(hall => hall, StringComparer.CurrentCultureIgnoreCase).ToList();
+            foreach (var hall in halls)
                 HallFilterCombo.Items.Add(new ComboBoxItem { Content = hall });
             HallFilterCombo.SelectedIndex = 0;
+            PostHallCombo.Items.Clear();
+            foreach (var hall in halls)
+                PostHallCombo.Items.Add(new ComboBoxItem { Content = hall });
+            if (_games.Any(game => string.IsNullOrWhiteSpace(game.Hall)))
+                PostHallCombo.Items.Add(new ComboBoxItem { Content = "Зал не указан" });
+            PostHallCombo.SelectedIndex = PostHallCombo.Items.Count > 0 ? 0 : -1;
             CreatePackageButton.IsEnabled = _games.Count > 0;
             _preparedVkGameId = null;
             _preparedVkGroupId = null;
@@ -567,10 +575,29 @@ public partial class MainWindow : Window
             CopyPostButton.IsEnabled = false;
             return;
         }
-        PostPreviewBox.Text = PostBuilder.BuildPost(
-            tournament.Name, date, _games, IntroBox.Text, VenueBox.Text, HashtagsBox.Text, FirstLinkBox.Text,
-            _createdStreamLinks);
+        var allHalls = IsAllHallsPost();
+        PostHallCombo.IsEnabled = !allHalls;
+        PostPreviewBox.Text = allHalls
+            ? PostBuilder.BuildPostGroupedByHall(
+                tournament.Name, date, _games, IntroBox.Text, VenueBox.Text, HashtagsBox.Text, FirstLinkBox.Text,
+                _createdStreamLinks)
+            : PostBuilder.BuildPost(
+                tournament.Name, date, GetPostGames(), IntroBox.Text, VenueBox.Text, HashtagsBox.Text, FirstLinkBox.Text,
+                _createdStreamLinks);
         CopyPostButton.IsEnabled = true;
+    }
+
+    private bool IsAllHallsPost() =>
+        (PostFormatCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() == "На все залы";
+
+    private IReadOnlyList<GameRecord> GetPostGames()
+    {
+        if (IsAllHallsPost()) return _games;
+        var selectedHall = (PostHallCombo.SelectedItem as ComboBoxItem)?.Content?.ToString();
+        if (string.IsNullOrWhiteSpace(selectedHall)) return Array.Empty<GameRecord>();
+        return selectedHall.Equals("Зал не указан", StringComparison.CurrentCultureIgnoreCase)
+            ? _games.Where(game => string.IsNullOrWhiteSpace(game.Hall)).ToArray()
+            : _games.Where(game => game.Hall.Equals(selectedHall, StringComparison.CurrentCultureIgnoreCase)).ToArray();
     }
 
     private void SetBusy(bool value)

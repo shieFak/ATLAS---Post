@@ -99,6 +99,47 @@ public static class PostBuilder
         return string.Join(Environment.NewLine, lines).TrimEnd();
     }
 
+    public static string BuildPostGroupedByHall(string tournamentName, DateTime date, IReadOnlyList<GameRecord> games,
+        string intro, string venue, string hashtags, string firstStreamLink,
+        IReadOnlyDictionary<string, string>? streamLinksByGameId = null)
+    {
+        var lines = new List<string>
+        {
+            string.IsNullOrWhiteSpace(intro) ? DefaultIntro(tournamentName, date) : intro.Trim(),
+            CallToAction,
+            string.Empty
+        };
+
+        var indexedGames = games.Select((game, index) => (Game: game, Index: index));
+        foreach (var hallGroup in indexedGames.GroupBy(item => item.Game.Hall.Trim(), StringComparer.CurrentCultureIgnoreCase))
+        {
+            var hallTitle = string.IsNullOrWhiteSpace(hallGroup.Key)
+                ? (string.IsNullOrWhiteSpace(venue) ? "[Название зала и адрес]" : venue.Trim())
+                : hallGroup.Key;
+            lines.Add($"📍{hallTitle}");
+            lines.Add(string.Empty);
+
+            foreach (var item in hallGroup)
+            {
+                var game = item.Game;
+                var teams = $"{game.HomeTeam} - {game.GuestTeam}";
+                var label = streamLinksByGameId is not null && streamLinksByGameId.TryGetValue(game.Id, out var createdUrl)
+                    ? $"[{createdUrl}|{teams}]"
+                    : TryExpandStreamLink(firstStreamLink, item.Index, out var sequentialUrl)
+                        ? $"[{sequentialUrl}|{teams}]"
+                        : $"[|{teams}]";
+                lines.Add($"⚡{game.Time} - {label}");
+            }
+
+            lines.Add(string.Empty);
+        }
+
+        lines.Add(StatisticsLine);
+        lines.Add(string.Empty);
+        lines.Add(NormalizeHashtags(hashtags));
+        return string.Join(Environment.NewLine, lines).TrimEnd();
+    }
+
     public static string NormalizeHashtags(string value) =>
         string.Join(' ', Regex.Split(value.Trim(), @"\s+").Where(tag => !string.IsNullOrWhiteSpace(tag))
             .Select(tag => $"#{tag.TrimStart('#')}"));

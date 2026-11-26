@@ -253,9 +253,21 @@
                             </DataGrid><StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=GamesGrid}" Value="False"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></StackPanel.Style><Border Background="#FFF0E4" CornerRadius="28" Width="56" Height="56" HorizontalAlignment="Center"><TextBlock Text="↗" FontSize="28" Foreground="#E7772A" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><TextBlock Text="Здесь начнётся игровой день" FontSize="22" FontWeight="SemiBold" Foreground="#102A43" HorizontalAlignment="Center" Margin="0,20,0,8"/><TextBlock Text="Выбери турнир и дату слева, затем нажми «Найти игры»." Foreground="#77899B" FontSize="12" HorizontalAlignment="Center"/><TextBlock Text="Обложки  /  Расписание  /  Пост  /  ID игр" Foreground="#1682C4" FontSize="11" HorizontalAlignment="Center" Margin="0,22,0,0"/></StackPanel></Grid>
                         </TabItem>
                         <TabItem Header="Пост">
-                            <Border Background="#132A3E" CornerRadius="10" Margin="0,10,0,5" Padding="4">
-                                <TextBox x:Name="PostPreviewBox" Style="{StaticResource PostPreviewStyle}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="13" BorderThickness="0" />
-                            </Border>
+                            <Grid Margin="10">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock Text="Формат поста:" Foreground="#52677A" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <ComboBox x:Name="PostFormatCombo" Width="220" SelectedIndex="0" SelectionChanged="Inputs_Changed">
+                                        <ComboBoxItem Content="На выбранный зал" />
+                                        <ComboBoxItem Content="На все залы" />
+                                    </ComboBox>
+                                    <TextBlock Text="Зал:" Foreground="#52677A" VerticalAlignment="Center" Margin="18,0,8,0" />
+                                    <ComboBox x:Name="PostHallCombo" Width="300" SelectionChanged="Inputs_Changed" />
+                                </DockPanel>
+                                <Border Grid.Row="1" Background="#132A3E" CornerRadius="10" Padding="4">
+                                    <TextBox x:Name="PostPreviewBox" Style="{StaticResource PostPreviewStyle}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="13" BorderThickness="0" />
+                                </Border>
+                            </Grid>
                         </TabItem>
                         <TabItem x:Name="VkStreamsTab" Header="Трансляции VK">
                             <Grid Margin="10">
